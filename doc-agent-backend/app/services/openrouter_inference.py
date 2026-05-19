@@ -22,13 +22,9 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Primary model for classification and entity extraction (auto picks best available)
 LLAMA_MODEL = "openrouter/auto"
 
-# ALL free models — fired in PARALLEL, first valid response wins the race!
-# If one is rate-limited or returns null, the others pick it up immediately.
 ALL_FREE_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-chat:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "nvidia/llama-3.1-nemotron-70b-instruct:free",
+    "deepseek/deepseek-r1:free",                 # Main model (DeepSeek R1 free)
+    "meta-llama/llama-3.3-70b-instruct:free",    # Fallback model
 ]
 
 # Use the same pool for QA
