@@ -10,6 +10,7 @@ from app.models.document import Document
 from app.services.inference import answer_question
 from app.services.ocr import run_ocr
 import aiofiles
+from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/api/qa", tags=["qa"])
 
@@ -38,7 +39,7 @@ async def query_document(
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read document file from disk")
         
-    result = answer_question(file_bytes, doc.ocr_text or "", request.question, mime_type=doc.mime_type)
+    result = await run_in_threadpool(answer_question, file_bytes, doc.ocr_text or "", request.question, mime_type=doc.mime_type)
 
     return {
         "answer": result["answer"],
@@ -55,8 +56,8 @@ async def query_inline(
 ):
     file_bytes = await file.read()
     
-    ocr_text = run_ocr(file_bytes, file.content_type or "image/jpeg")
-    result = answer_question(file_bytes, ocr_text, question, mime_type=file.content_type or "image/jpeg")
+    ocr_text = await run_in_threadpool(run_ocr, file_bytes, file.content_type or "image/jpeg")
+    result = await run_in_threadpool(answer_question, file_bytes, ocr_text, question, mime_type=file.content_type or "image/jpeg")
 
     return {
         "answer": result["answer"],

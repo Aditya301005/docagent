@@ -13,6 +13,7 @@ from app.tasks.process_doc import process_document_task
 from app.services.file_handler import infer_mime_type
 from app.services.ocr import run_ocr
 from app.services.inference import run_inference
+from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/api", tags=["process"])
 
@@ -89,7 +90,7 @@ async def process_one_shot(
     file_bytes = await file.read()
     mime_type = infer_mime_type(file_bytes, file.content_type, file.filename)
 
-    text = run_ocr(file_bytes, mime_type)
-    results = run_inference(file_bytes, text, mime_type=mime_type)
+    text = await run_in_threadpool(run_ocr, file_bytes, mime_type)
+    results = await run_in_threadpool(run_inference, file_bytes, text, mime_type=mime_type)
 
     return results
