@@ -9,7 +9,17 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://docagent-backend-ue4d.onrender.com",
+        "EXPO_PUBLIC_AUTH_URL": "https://docagent-auth.onrender.com"
+      }
     },
     "production": {
       "autoIncrement": true
