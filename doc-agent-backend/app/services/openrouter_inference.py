@@ -83,6 +83,73 @@ async def _call_openrouter(prompt: str, api_key: str) -> str:
         data = response.json()
         return data["choices"][0]["message"]["content"]
 
+def _call_single_model_generic(model: str, prompt: str, system_message: str, api_key: str) -> dict:
+    """Call one text-only OpenRouter model and return parsed JSON."""
+    try:
+        with httpx.Client() as client:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 2048,
+            }
+            response = client.post(
+                OPENROUTER_URL,
+                headers=_get_headers(api_key),
+                json=payload,
+                timeout=120.0,
+            )
+            response.raise_for_status()
+            raw_content = response.json()["choices"][0]["message"]["content"]
+            if not raw_content:
+                raise ValueError("Model returned empty/null content")
+        data = _parse_json_from_response(raw_content)
+        return {"data": data, "model": model}
+    except Exception as exc:
+        logger.warning("Model %s failed: %s", model, exc)
+        return {"error": str(exc), "model": model}
+
+def _race_models(prompt: str, system_message: str, api_key: str, validation_fn) -> dict:
+    """🏁 RACING PATTERN: Fire ALL free models simultaneously, first valid response wins."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    executor = ThreadPoolExecutor(max_workers=len(ALL_FREE_MODELS))
+    futures = {
+        executor.submit(_call_single_model_generic, model, prompt, system_message, api_key): model
+        for model in ALL_FREE_MODELS
+    }
+
+    best_data = None
+    best_model = None
+    results = []
+
+    for future in as_completed(futures):
+        res = future.result()
+        results.append(res)
+        
+        if "data" in res and validation_fn(res["data"]):
+            best_data = res["data"]
+            best_model = res["model"]
+            logger.info("🏆 Race winner: model=%s", best_model)
+            break
+
+    # Kill remaining threads immediately
+    executor.shutdown(wait=False, cancel_futures=True)
+
+    if best_data is not None:
+        return {"data": best_data, "model": best_model}
+
+    # If all failed or returned invalid data, try to salvage the best one
+    logger.error("All models failed the race or validation.")
+    valid_results = [r for r in results if "data" in r]
+    if valid_results:
+        return {"data": valid_results[0]["data"], "model": valid_results[0]["model"]}
+        
+    return {"error": "All models failed", "model": "none"}
+
 def classify_document_openrouter(ocr_text: str, api_key: str) -> dict:
     """Classify document based on OCR text using OpenRouter."""
     class_list = ", ".join(CLASS_NAMES)
@@ -101,39 +168,34 @@ Return ONLY a JSON object:
   "reasoning": "<brief explanation>"
 }}"""
 
-    try:
-        with httpx.Client() as client:
-            payload = {
-                "model": LLAMA_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are an expert document classifier. Respond ONLY with valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.1,
-            }
-            response = client.post(OPENROUTER_URL, headers=_get_headers(api_key), json=payload, timeout=60.0)
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            
-        data = _parse_json_from_response(content)
-        doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
-        if doc_class not in CLASS_NAMES:
-            for name in CLASS_NAMES:
-                if name in doc_class or doc_class in name:
-                    doc_class = name
-                    break
-            else:
-                doc_class = "unknown"
+    system_msg = "You are an expert document classifier. Respond ONLY with valid JSON."
+    
+    def _is_valid(data):
+        return isinstance(data, dict) and "class" in data
 
-        return {
-            "class": doc_class,
-            "confidence": float(data.get("confidence", 0.8)),
-            "reasoning": data.get("reasoning", ""),
-            "source": "openrouter_auto"
-        }
-    except Exception as exc:
-        logger.error("OpenRouter classification failed: %s", exc)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
+    
+    if "error" in race_result and "data" not in race_result:
+        logger.error("Classification race failed completely.")
         return {"class": "unknown", "confidence": 0.0, "source": "openrouter_error"}
+
+    data = race_result["data"]
+    doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
+    
+    if doc_class not in CLASS_NAMES:
+        for name in CLASS_NAMES:
+            if name in doc_class or doc_class in name:
+                doc_class = name
+                break
+        else:
+            doc_class = "unknown"
+
+    return {
+        "class": doc_class,
+        "confidence": float(data.get("confidence", 0.8)),
+        "reasoning": data.get("reasoning", ""),
+        "source": f"openrouter_race ({race_result.get('model')})"
+    }
 
 def extract_entities_openrouter(ocr_text: str, api_key: str) -> list[dict]:
     """Extract entities from OCR text using OpenRouter."""
@@ -151,63 +213,21 @@ Return ONLY a JSON array of objects:
 ]
 If none found, return []."""
 
-    try:
-        with httpx.Client() as client:
-            payload = {
-                "model": LLAMA_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.1,
-            }
-            response = client.post(OPENROUTER_URL, headers=_get_headers(api_key), json=payload, timeout=60.0)
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            
-        data = _parse_json_from_response(content)
-        return data if isinstance(data, list) else []
-    except Exception as exc:
-        logger.error("OpenRouter extraction failed: %s", exc)
+    system_msg = "You are an expert entity extractor. Respond ONLY with a valid JSON array."
+    
+    def _is_valid(data):
+        return isinstance(data, list)
+
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
+    
+    if "error" in race_result and "data" not in race_result:
+        logger.error("Entity extraction race failed completely.")
         return []
 
-def _call_single_model_qa(model: str, prompt: str, api_key: str) -> dict:
-    """Call one text-only OpenRouter model for QA and return parsed result."""
-    try:
-        with httpx.Client() as client:
-            payload = {
-                "model": model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an expert document analyst. Read all provided "
-                            "text carefully and answer questions thoroughly. "
-                            "Respond ONLY with valid JSON."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 2048,
-            }
-            response = client.post(
-                OPENROUTER_URL,
-                headers=_get_headers(api_key),
-                json=payload,
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            raw_content = response.json()["choices"][0]["message"]["content"]
-            # Guard against None responses from the model
-            if not raw_content:
-                raise ValueError("Model returned empty/null content")
-            content = raw_content
-        data = _parse_json_from_response(content)
-        answer = str(data.get("answer", "")).strip()
-        confidence = float(data.get("confidence", 0.0))
-        found = bool(data.get("found", bool(answer)))
-        return {"answer": answer, "confidence": confidence, "found": found, "model": model}
-    except Exception as exc:
-        logger.warning("Model %s QA failed: %s", model, exc)
-        return {"answer": "", "confidence": 0.0, "found": False, "model": model}
+    data = race_result["data"]
+    return data if isinstance(data, list) else []
+
+    pass # Handled by generic _race_models
 
 
 def _call_gemma_vision_qa(
@@ -435,53 +455,25 @@ Return ONLY a valid JSON object (no markdown, no explanation):
   "found": <true/false>
 }}"""
 
-    # ── Run all QA models in parallel ────────────────────────────────────────
-    # Gemma 4 uses vision (images + text); others use smart-chunked OCR text
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    system_msg = "You are an expert document analyst. Read all provided text carefully and answer questions thoroughly. Respond ONLY with valid JSON."
+    
+    def _is_valid(data):
+        return isinstance(data, dict) and "answer" in data and str(data["answer"]).strip()
 
-    # 🏁 RACING PATTERN: Fire ALL free models simultaneously.
-    # The FIRST model to return any valid non-empty answer wins immediately.
-    # Rate-limited or null responses are silently skipped.
-    executor = ThreadPoolExecutor(max_workers=len(QA_MODELS))
-    futures = {
-        executor.submit(_call_single_model_qa, model, prompt, api_key): model
-        for model in QA_MODELS
-    }
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
 
-    best = None
-    results = []
-    for future in as_completed(futures):
-        res = future.result()
-        results.append(res)
-        # ✅ Exit as soon as ANY model returns a non-empty answer
-        if res.get("answer") and str(res["answer"]).strip():
-            best = res
-            logger.info(
-                "🏆 QA race winner: model=%s confidence=%.2f",
-                best.get("model"), best.get("confidence", 0.0)
-            )
-            break
+    if "error" in race_result and "data" not in race_result:
+        return {"answer": "All models failed or timed out.", "confidence": 0.0, "source": "openrouter_race_failed"}
 
-    # Kill remaining background threads immediately — we have our answer
-    executor.shutdown(wait=False, cancel_futures=True)
-
-    # If all models failed (empty/null/rate-limited), pick best of what we have
-    if not best:
-        found_results = [r for r in results if r.get("found") and r.get("answer")]
-        if found_results:
-            best = max(found_results, key=lambda r: r["confidence"])
-        elif results:
-            best = max(results, key=lambda r: r.get("confidence", 0.0))
-        else:
-            return {"answer": "All models are currently rate-limited. Please try again in a moment.", "confidence": 0.0, "source": "openrouter_all_failed"}
-
-        logger.info(
-            "QA fallback winner: model=%s confidence=%.2f",
-            best.get("model"), best.get("confidence", 0.0),
-        )
+    data = race_result["data"]
+    best_model = race_result.get("model", "unknown")
+    
+    answer = str(data.get("answer", "")).strip()
+    confidence = float(data.get("confidence", 0.0))
+    found = bool(data.get("found", bool(answer)))
 
     return {
-        "answer": best["answer"],
-        "confidence": best.get("confidence", 0.8),
-        "source": f"openrouter_race_winner ({best.get('model', 'unknown')})",
+        "answer": answer,
+        "confidence": confidence if found else 0.0,
+        "source": f"openrouter_race ({best_model})",
     }
