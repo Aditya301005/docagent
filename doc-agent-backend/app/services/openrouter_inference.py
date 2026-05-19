@@ -23,8 +23,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLAMA_MODEL = "openrouter/auto"
 
 ALL_FREE_MODELS = [
-    "deepseek/deepseek-r1:free",                 # Main model (DeepSeek R1 free)
-    "meta-llama/llama-3.3-70b-instruct:free",    # Fallback model
+    "deepseek/deepseek-v4-flash:free",           # Main model (DeepSeek V4 Flash Free)
+    "google/gemini-2.5-flash-lite",              # Fallback model (Gemini 2.5 Flash Lite)
 ]
 
 # Use the same pool for QA
