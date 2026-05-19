@@ -1,34 +1,38 @@
-const nodemailer = require('nodemailer');
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  secure: false, // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 3000, // Fail fast in 3 seconds if blocked
-  greetingTimeout: 3000,
-  socketTimeout: 3000,
-});
-
 const sendEmail = async (to, subject, text, html) => {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.error('❌ RESEND_API_KEY is not defined in environment variables!');
+    return null;
+  }
+
   try {
-    const info = await transporter.sendMail({
-      from: `"DocAgent Auth" <${process.env.SMTP_USER}>`,
-      to,
-      subject,
-      text,
-      html,
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'DocAgent <onboarding@resend.dev>',
+        to: [to],
+        subject: subject,
+        text: text,
+        html: html,
+      }),
     });
-    console.log('Message sent: %s', info.messageId);
-    return info;
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to send email via Resend API');
+    }
+
+    console.log('📬 Email successfully sent via Resend API! Message ID:', data.id);
+    return data;
   } catch (error) {
-    console.error('⚠️ Render Free Tier SMTP Blocked Email ⚠️');
-    console.error('Email sending failed, but OTP is visible above or in authController. Not throwing error so registration can continue.');
+    console.error('⚠️ Resend Email sending failed ⚠️');
     console.error('Error Details:', error.message);
-    // Do not throw error so we don't crash the registration process
     return null;
   }
 };
