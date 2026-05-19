@@ -25,12 +25,10 @@ LLAMA_MODEL = "openrouter/auto"
 # ALL free models — fired in PARALLEL, first valid response wins the race!
 # If one is rate-limited or returns null, the others pick it up immediately.
 ALL_FREE_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",          # Very reliable, large context
-    "deepseek/deepseek-v4-flash:free",                  # Strong reasoning, fast
-    "google/gemma-4-31b-it:free",                       # Google Gemma 4 flagship
-    "google/gemma-4-26b-a4b-it:free",                   # Google Gemma 4 compact
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", # Nvidia reasoning model
-    "google/gemma-3-27b-it:free",                       # Gemma 3 strong fallback
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "nvidia/llama-3.1-nemotron-70b-instruct:free",
 ]
 
 # Use the same pool for QA
@@ -100,7 +98,7 @@ def _call_single_model_generic(model: str, prompt: str, system_message: str, api
                 OPENROUTER_URL,
                 headers=_get_headers(api_key),
                 json=payload,
-                timeout=120.0,
+                timeout=45.0,
             )
             response.raise_for_status()
             raw_content = response.json()["choices"][0]["message"]["content"]
@@ -113,41 +111,20 @@ def _call_single_model_generic(model: str, prompt: str, system_message: str, api
         return {"error": str(exc), "model": model}
 
 def _race_models(prompt: str, system_message: str, api_key: str, validation_fn) -> dict:
-    """🏁 RACING PATTERN: Fire ALL free models simultaneously, first valid response wins."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    """🏁 SEQUENTIAL FALLBACK PATTERN: 
+    Free tier accounts strictly limit concurrent requests. 
+    Firing 6 at once causes instant 429 Rate Limits.
+    We now try them sequentially; the first one to succeed wins."""
     
-    executor = ThreadPoolExecutor(max_workers=len(ALL_FREE_MODELS))
-    futures = {
-        executor.submit(_call_single_model_generic, model, prompt, system_message, api_key): model
-        for model in ALL_FREE_MODELS
-    }
-
-    best_data = None
-    best_model = None
-    results = []
-
-    for future in as_completed(futures):
-        res = future.result()
-        results.append(res)
+    for model in ALL_FREE_MODELS:
+        logger.info("Trying model: %s", model)
+        res = _call_single_model_generic(model, prompt, system_message, api_key)
         
         if "data" in res and validation_fn(res["data"]):
-            best_data = res["data"]
-            best_model = res["model"]
-            logger.info("🏆 Race winner: model=%s", best_model)
-            break
-
-    # Kill remaining threads immediately
-    executor.shutdown(wait=False, cancel_futures=True)
-
-    if best_data is not None:
-        return {"data": best_data, "model": best_model}
-
-    # If all failed or returned invalid data, try to salvage the best one
-    logger.error("All models failed the race or validation.")
-    valid_results = [r for r in results if "data" in r]
-    if valid_results:
-        return {"data": valid_results[0]["data"], "model": valid_results[0]["model"]}
-        
+            logger.info("🏆 Winner: model=%s", res["model"])
+            return res
+            
+    logger.error("All models failed sequentially.")
     return {"error": "All models failed", "model": "none"}
 
 def classify_document_openrouter(ocr_text: str, api_key: str) -> dict:
