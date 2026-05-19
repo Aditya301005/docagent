@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getApiUrl } from '../constants/api';
+import { getAuthUrl } from '../constants/api';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { useDocStore } from '../store/useDocStore';
 
@@ -30,8 +30,7 @@ export default function VerifyEmailScreen() {
 
     setLoading(true);
     try {
-      const apiUrl = await getApiUrl();
-      const nodeApiUrl = apiUrl.replace('8000', '3000'); 
+      const nodeApiUrl = await getAuthUrl();
 
       const response = await axios.post(`${nodeApiUrl}/api/auth/verify-email`, {
         email: email,

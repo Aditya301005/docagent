@@ -91,16 +91,8 @@ export default function ProfileScreen() {
     setIsUpdating(true);
     try {
       const token = await AsyncStorage.getItem('auth_token');
-      const { getApiUrl } = require('../constants/api');
-      let baseUrl = await getApiUrl();
-      
-      // Clean baseUrl and ensure we hit port 3000
-      baseUrl = baseUrl.split('?')[0].split('#')[0];
-      if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-      
-      const nodeApiUrl = baseUrl.includes(':8000') 
-        ? baseUrl.replace(':8000', ':3000')
-        : baseUrl.replace('8000', '3000'); 
+      const { getAuthUrl } = require('../constants/api');
+      const nodeApiUrl = await getAuthUrl();
         
       const fullUrl = `${nodeApiUrl}/api/auth/me`;
       console.log('Profile update targeting:', fullUrl);
@@ -134,16 +126,8 @@ export default function ProfileScreen() {
     setIsUpdating(true);
     try {
       const token = await AsyncStorage.getItem('auth_token');
-      const { getApiUrl } = require('../constants/api');
-      let baseUrl = await getApiUrl();
-      
-      // Clean baseUrl and ensure we hit port 3000
-      baseUrl = baseUrl.split('?')[0].split('#')[0];
-      if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-      
-      const nodeApiUrl = baseUrl.includes(':8000') 
-        ? baseUrl.replace(':8000', ':3000')
-        : baseUrl.replace('8000', '3000'); 
+      const { getAuthUrl } = require('../constants/api');
+      const nodeApiUrl = await getAuthUrl();
 
       const fullUrl = `${nodeApiUrl}/api/auth/change-password`;
       console.log('Targeting Password Change API at:', fullUrl);

@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, Styl
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
-import { getApiUrl } from '../constants/api';
+import { getAuthUrl } from '../constants/api';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 const { width: W } = Dimensions.get('window');
@@ -46,8 +46,7 @@ export default function ResetPasswordScreen() {
 
     setLoading(true);
     try {
-      const apiUrl = await getApiUrl();
-      const nodeApiUrl = apiUrl.replace('8000', '3000'); 
+      const nodeApiUrl = await getAuthUrl();
 
       await axios.post(`${nodeApiUrl}/api/auth/reset-password`, {
         token: otp.trim(),

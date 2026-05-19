@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
-import { getApiUrl } from '../constants/api';
+import { getAuthUrl } from '../constants/api';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useDocStore } from '../store/useDocStore';
 import * as Haptics from 'expo-haptics';
@@ -68,7 +68,7 @@ export default function LoginScreenRoute() {
 
   const checkAuth = useCallback(() => {
     let isActive = true;
-
+ 
     const runAuthCheck = async () => {
       try {
         const token = await AsyncStorage.getItem('auth_token');
@@ -81,8 +81,8 @@ export default function LoginScreenRoute() {
         }
 
         if (token) {
-          const apiUrl = await getApiUrl();
-          const response = await axios.get(`${apiUrl.replace('8000', '3000')}/api/auth/me`, {
+          const nodeApiUrl = await getAuthUrl();
+          const response = await axios.get(`${nodeApiUrl}/api/auth/me`, {
             headers: { Authorization: `Bearer ${token}` },
             timeout: 5000,
           });
@@ -119,8 +119,7 @@ export default function LoginScreenRoute() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLoading(true);
     try {
-      const apiUrl = await getApiUrl();
-      const nodeApiUrl = apiUrl.replace('8000', '3000');
+      const nodeApiUrl = await getAuthUrl();
       const response = await axios.post(`${nodeApiUrl}/api/auth/login`, {
         email: email.trim().toLowerCase(),
         password,

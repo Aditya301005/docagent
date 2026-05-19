@@ -8,4 +8,8 @@ RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/c
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Sanitize line endings and make start.sh executable (in case written on Windows)
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
+
+CMD ["./start.sh"]
+
