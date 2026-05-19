@@ -22,11 +22,10 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Primary model for classification and entity extraction
 LLAMA_MODEL = "openrouter/auto"
 
-# Models used in PARALLEL for Q&A — DeepSeek V4 Flash is primary,
-# Nemotron Omni provides high availability and simultaneous reasoning.
+# Models used in PARALLEL for Q&A
 QA_MODELS = [
-    "deepseek/deepseek-v4-flash:free",                    # Strong reasoning, massive context
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"  # Nvidia's 30B reasoning model for HA
+    "meta-llama/llama-3.3-70b-instruct:free",  # Very reliable, large context
+    "google/gemma-3-27b-it:free",              # Google Gemma — strong fallback
 ]
 
 def _get_headers(api_key: str):
@@ -188,7 +187,11 @@ def _call_single_model_qa(model: str, prompt: str, api_key: str) -> dict:
                 timeout=120.0,
             )
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            raw_content = response.json()["choices"][0]["message"]["content"]
+            # Guard against None responses from the model
+            if not raw_content:
+                raise ValueError("Model returned empty/null content")
+            content = raw_content
         data = _parse_json_from_response(content)
         answer = str(data.get("answer", "")).strip()
         confidence = float(data.get("confidence", 0.0))
