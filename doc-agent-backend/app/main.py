@@ -54,3 +54,7 @@ app.include_router(export.router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "DocAgent", "version": "1.0.0"}
+
+@app.get("/")
+async def root():
+    return {"status": "alive", "service": "DocAgent"}
