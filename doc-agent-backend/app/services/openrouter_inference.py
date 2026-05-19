@@ -94,7 +94,7 @@ def _call_single_model_generic(model: str, prompt: str, system_message: str, api
                 OPENROUTER_URL,
                 headers=_get_headers(api_key),
                 json=payload,
-                timeout=45.0,
+                timeout=15.0, # Fail fast if rate-limited or queued
             )
             response.raise_for_status()
             raw_content = response.json()["choices"][0]["message"]["content"]

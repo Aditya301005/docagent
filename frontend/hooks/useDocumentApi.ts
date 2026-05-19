@@ -67,7 +67,7 @@ export function useDocumentApi() {
     const apiBase = await getApiUrl();
     const res = await axios.post(`${apiBase}/api/process`, buildImageFormData(imageUri, options), {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 45000,
+      timeout: 120000, // 2 minutes to allow sequential model fallbacks to complete
     });
 
     return res.data as ProcessResponse;
