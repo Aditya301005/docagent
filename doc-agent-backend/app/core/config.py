@@ -44,6 +44,12 @@ settings = Settings()
 if settings.REDIS_URL.startswith("redis://") and "upstash.io" in settings.REDIS_URL:
     settings.REDIS_URL = settings.REDIS_URL.replace("redis://", "rediss://", 1)
 
+if settings.REDIS_URL.startswith("rediss://") and "ssl_cert_reqs=" not in settings.REDIS_URL:
+    if "?" in settings.REDIS_URL:
+        settings.REDIS_URL += "&ssl_cert_reqs=CERT_NONE"
+    else:
+        settings.REDIS_URL += "?ssl_cert_reqs=CERT_NONE"
+
 def create_upload_dir():
     """Ensure the uploads directory exists on startup."""
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
