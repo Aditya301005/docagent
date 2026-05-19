@@ -40,6 +40,10 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Auto-fix Redis URL for Upstash TLS
+if settings.REDIS_URL.startswith("redis://") and "upstash.io" in settings.REDIS_URL:
+    settings.REDIS_URL = settings.REDIS_URL.replace("redis://", "rediss://", 1)
+
 def create_upload_dir():
     """Ensure the uploads directory exists on startup."""
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
