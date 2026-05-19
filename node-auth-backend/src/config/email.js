@@ -22,8 +22,11 @@ const sendEmail = async (to, subject, text, html) => {
     console.log('Message sent: %s', info.messageId);
     return info;
   } catch (error) {
-    console.error('Error sending email:', error);
-    throw error;
+    console.error('⚠️ Render Free Tier SMTP Blocked Email ⚠️');
+    console.error('Email sending failed, but OTP is visible above or in authController. Not throwing error so registration can continue.');
+    console.error('Error Details:', error.message);
+    // Do not throw error so we don't crash the registration process
+    return null;
   }
 };
 

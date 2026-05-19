@@ -63,6 +63,10 @@ exports.register = async (req, res) => {
       </div>
     `;
 
+    console.log('\n=============================================');
+    console.log(`🔐 OTP CODE FOR ${email}: ${otp} 🔐`);
+    console.log('=============================================\n');
+
     await sendEmail(
       email,
       `[${otp}] DocAgent - Verification Code`,
@@ -195,6 +199,10 @@ exports.forgotPassword = async (req, res) => {
         <p>If you didn't request this, please ignore this email and your password will remain unchanged.</p>
       </div>
     `;
+
+    console.log('\n=============================================');
+    console.log(`🔑 PASSWORD RESET CODE FOR ${email}: ${resetOtp} 🔑`);
+    console.log('=============================================\n');
 
     await sendEmail(
       email,
