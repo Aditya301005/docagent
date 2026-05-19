@@ -19,14 +19,22 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Primary model for classification and entity extraction
+# Primary model for classification and entity extraction (auto picks best available)
 LLAMA_MODEL = "openrouter/auto"
 
-# Models used in PARALLEL for Q&A
-QA_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",  # Very reliable, large context
-    "google/gemma-3-27b-it:free",              # Google Gemma — strong fallback
+# ALL free models — fired in PARALLEL, first valid response wins the race!
+# If one is rate-limited or returns null, the others pick it up immediately.
+ALL_FREE_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",          # Very reliable, large context
+    "deepseek/deepseek-v4-flash:free",                  # Strong reasoning, fast
+    "google/gemma-4-31b-it:free",                       # Google Gemma 4 flagship
+    "google/gemma-4-26b-a4b-it:free",                   # Google Gemma 4 compact
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", # Nvidia reasoning model
+    "google/gemma-3-27b-it:free",                       # Gemma 3 strong fallback
 ]
+
+# Use the same pool for QA
+QA_MODELS = ALL_FREE_MODELS
 
 def _get_headers(api_key: str):
     return {
@@ -431,61 +439,49 @@ Return ONLY a valid JSON object (no markdown, no explanation):
     # Gemma 4 uses vision (images + text); others use smart-chunked OCR text
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    TEXT_ONLY_MODELS = [m for m in QA_MODELS if "gemma" not in m]
-    GEMMA_MODEL = next((m for m in QA_MODELS if "gemma" in m), None)
-
-    total_workers = len(TEXT_ONLY_MODELS) + (1 if GEMMA_MODEL else 0)
-    results = []
-
-    executor = ThreadPoolExecutor(max_workers=total_workers)
-    futures = {}
-
-    # Text-only models get the smart-chunked OCR prompt
-    for model in TEXT_ONLY_MODELS:
-        futures[executor.submit(_call_single_model_qa, model, prompt, api_key)] = model
-
-    # Gemma 4: vision path if file_bytes provided, else text fallback
-    if GEMMA_MODEL:
-        if file_bytes is not None:
-            futures[executor.submit(
-                _call_gemma_vision_qa,
-                file_bytes, mime_type, question, context, api_key,
-            )] = GEMMA_MODEL + "_vision"
-        else:
-            futures[executor.submit(
-                _call_single_model_qa, GEMMA_MODEL, prompt, api_key
-            )] = GEMMA_MODEL
+    # 🏁 RACING PATTERN: Fire ALL free models simultaneously.
+    # The FIRST model to return any valid non-empty answer wins immediately.
+    # Rate-limited or null responses are silently skipped.
+    executor = ThreadPoolExecutor(max_workers=len(QA_MODELS))
+    futures = {
+        executor.submit(_call_single_model_qa, model, prompt, api_key): model
+        for model in QA_MODELS
+    }
 
     best = None
+    results = []
     for future in as_completed(futures):
         res = future.result()
         results.append(res)
-        # Early exit if we got a highly confident answer!
-        if res.get("found") and res.get("confidence", 0.0) >= 0.7:
+        # ✅ Exit as soon as ANY model returns a non-empty answer
+        if res.get("answer") and str(res["answer"]).strip():
             best = res
-            logger.info("QA early winner: model=%s confidence=%.2f", best.get("model"), best.get("confidence"))
+            logger.info(
+                "🏆 QA race winner: model=%s confidence=%.2f",
+                best.get("model"), best.get("confidence", 0.0)
+            )
             break
 
-    # Leave background threads running but don't block the API response
+    # Kill remaining background threads immediately — we have our answer
     executor.shutdown(wait=False, cancel_futures=True)
 
-    # If no early winner, pick the best of what finished (or all if all failed)
+    # If all models failed (empty/null/rate-limited), pick best of what we have
     if not best:
         found_results = [r for r in results if r.get("found") and r.get("answer")]
         if found_results:
             best = max(found_results, key=lambda r: r["confidence"])
         elif results:
-            best = max(results, key=lambda r: r["confidence"])
+            best = max(results, key=lambda r: r.get("confidence", 0.0))
         else:
-            return {"answer": "Error reaching OpenRouter", "confidence": 0.0, "source": "openrouter_error"}
+            return {"answer": "All models are currently rate-limited. Please try again in a moment.", "confidence": 0.0, "source": "openrouter_all_failed"}
 
         logger.info(
-            "QA winner: model=%s confidence=%.2f answer_len=%d",
-            best.get("model"), best["confidence"], len(best["answer"]),
+            "QA fallback winner: model=%s confidence=%.2f",
+            best.get("model"), best.get("confidence", 0.0),
         )
 
     return {
         "answer": best["answer"],
-        "confidence": best["confidence"],
-        "source": f"openrouter_parallel ({best.get('model', 'unknown')})",
+        "confidence": best.get("confidence", 0.8),
+        "source": f"openrouter_race_winner ({best.get('model', 'unknown')})",
     }
