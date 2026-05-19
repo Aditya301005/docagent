@@ -19,6 +19,9 @@ if _db_url.startswith("postgres://"):
 elif _db_url.startswith("postgresql://"):
     _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+# asyncpg does not accept sslmode in the URL, so strip it out
+_db_url = _db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+
 config.set_main_option("sqlalchemy.url", _db_url)
 
 # Interpret the config file for Python logging.
