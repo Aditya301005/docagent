@@ -71,7 +71,7 @@ export async function getApiUrl(): Promise<string> {
   
   // If there's a production environment variable, use it directly without dynamic fallback checks
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
   }
 
   if (saved && await isReachable(saved)) {
@@ -90,7 +90,7 @@ export async function getApiUrl(): Promise<string> {
     }
   }
 
-  return DEFAULT_API_URL;
+  return DEFAULT_API_URL.replace(/\/+$/, '');
 }
 
 export async function getAuthUrl(): Promise<string> {
@@ -98,7 +98,7 @@ export async function getAuthUrl(): Promise<string> {
 
   // If there's a production environment variable, use it directly
   if (process.env.EXPO_PUBLIC_AUTH_URL) {
-    return process.env.EXPO_PUBLIC_AUTH_URL;
+    return process.env.EXPO_PUBLIC_AUTH_URL.replace(/\/+$/, '');
   }
 
   if (saved && await isAuthReachable(saved)) {
@@ -109,7 +109,7 @@ export async function getAuthUrl(): Promise<string> {
   const activeApiUrl = await getApiUrl();
   const autodiscoverUrl = activeApiUrl.replace(':8000', ':3000').replace('8000', '3000');
   
-  return autodiscoverUrl;
+  return autodiscoverUrl.replace(/\/+$/, '');
 }
 
 export async function setApiUrl(url: string): Promise<void> {
