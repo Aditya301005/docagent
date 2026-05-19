@@ -26,6 +26,12 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Large ML Model files & weight directories (too large for GitHub & free hosting RAM)
+doc-agent-backend/app/models/*.onnx
+doc-agent-backend/app/models/classifier/
+doc-agent-backend/app/models/ner/
+doc-agent-backend/app/models/vqa/
+
 # macOS
 .DS_Store
 *.pem
@@ -39,3 +45,26 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Backend
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env.bak/
+venv.bak/
+
+# Environment files
+.env
+.env.*
+
+# Redis
+Redis/
+Redis.zip
+
+# Uploads
+doc-agent-backend/uploads/*
+!doc-agent-backend/uploads/.gitkeep

@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "DocAgent",
+    "slug": "doc-agent",
+    "scheme": "docagent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./icons/DocAgent_logo.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./icons/DocAgent_logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "userInterfaceStyle": "dark"
+    },
+    "android": {
+      "package": "com.aditya3018.docagent",
+      "versionCode": 1,
+      "userInterfaceStyle": "dark",
+      "adaptiveIcon": {
+        "foregroundImage": "./icons/DocAgent_logo.png",
+        "backgroundColor": "#0f172a"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./icons/DocAgent_logo.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-router",
+      "expo-web-browser",
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow DocAgent to use camera to scan documents"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow DocAgent to access your photos"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b147909b-c558-4a1a-aa73-91d7a4b061ad"
+      }
+    }
+  }
+}
