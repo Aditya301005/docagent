@@ -9,7 +9,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { notifySecurity, notifyActivity } from '../../utils/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useColorScheme } from 'nativewind';
 
 const { width } = Dimensions.get('window');
 const ACTION_BTN_WIDTH = 80;
@@ -70,34 +69,31 @@ const PIN_KEYS = [
   ['', '0', 'del'],
 ];
 
-const PinPad = ({ onPress, isDark }: { onPress: (key: string) => void, isDark: boolean }) => {
-  const styles = getStyles(isDark);
-  return (
-    <View style={styles.pinPad}>
-      {PIN_KEYS.map((row, ri) => (
-        <View key={ri} style={styles.pinRow}>
-          {row.map((key, ki) => {
-            if (key === '') return <View key={ki} style={styles.pinKeyEmpty} />;
-            return (
-              <TouchableOpacity
-                key={ki}
-                style={styles.pinKey}
-                onPress={() => onPress(key)}
-                activeOpacity={0.6}
-              >
-                {key === 'del' ? (
-                  <BackspaceIcon color={isDark ? '#FFF' : '#1E293B'} />
-                ) : (
-                  <Text style={styles.pinKeyText}>{key}</Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ))}
-    </View>
-  );
-};
+const PinPad = ({ onPress }: { onPress: (key: string) => void }) => (
+  <View style={styles.pinPad}>
+    {PIN_KEYS.map((row, ri) => (
+      <View key={ri} style={styles.pinRow}>
+        {row.map((key, ki) => {
+          if (key === '') return <View key={ki} style={styles.pinKeyEmpty} />;
+          return (
+            <TouchableOpacity
+              key={ki}
+              style={styles.pinKey}
+              onPress={() => onPress(key)}
+              activeOpacity={0.6}
+            >
+              {key === 'del' ? (
+                <BackspaceIcon color="#FFF" />
+              ) : (
+                <Text style={styles.pinKeyText}>{key}</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    ))}
+  </View>
+);
 
 // ─── Swipeable Vault Card ─────────────────────────────────────────────────────
 
@@ -110,10 +106,6 @@ const SwipeableVaultCard = ({
   isSelected,
   onToggleSelect
 }: any) => {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const styles = getStyles(isDark);
-  
   const translateX = useRef(new Animated.Value(0)).current;
   const [swiped, setSwiped] = useState(false);
 
@@ -194,10 +186,6 @@ const SwipeableVaultCard = ({
 type PinMode = 'unlock' | 'set' | 'confirm';
 
 function PinLockScreen({ onSuccess }: { onSuccess: () => void }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const styles = getStyles(isDark);
-  
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [mode, setMode] = useState<PinMode>('unlock');
@@ -327,7 +315,7 @@ function PinLockScreen({ onSuccess }: { onSuccess: () => void }) {
         </View>
 
         <View style={styles.bottomSection}>
-          <PinPad onPress={handleKey} isDark={isDark} />
+          <PinPad onPress={handleKey} />
           {mode === 'unlock' && (
             <TouchableOpacity
               onPress={handleResetPin}
@@ -346,10 +334,6 @@ function PinLockScreen({ onSuccess }: { onSuccess: () => void }) {
 // ─── Main Vault Screen ────────────────────────────────────────────────────────
 
 export default function VaultScreen() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const styles = getStyles(isDark);
-
   const router = useRouter();
   const { getVisibleDocuments, isVaultAuthenticated, setVaultAuthenticated, toggleLock, removeDocument, documents: allDocuments } = useDocStore();
   const [lockedDocs, setLockedDocs] = useState(getVisibleDocuments(true));
@@ -489,7 +473,7 @@ export default function VaultScreen() {
 
       {lockedDocs.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <LockIcon size={60} color={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"} />
+          <LockIcon size={60} color="rgba(255,255,255,0.2)" />
           <Text style={styles.emptyText}>Your vault is empty.</Text>
           <Text style={styles.emptySubtext}>Long-press any document in History to move it here.</Text>
         </View>
@@ -527,73 +511,60 @@ export default function VaultScreen() {
   );
 }
 
-const getStyles = (isDark: boolean) => {
-  const bg = isDark ? '#0F0F1E' : '#F8FAFC';
-  const card = isDark ? '#1A1A2E' : '#FFFFFF';
-  const text = isDark ? '#FFF' : '#1E293B';
-  const subtext = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)';
-  const border = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-  const iconBg = isDark ? 'rgba(108, 99, 255, 0.1)' : 'rgba(108, 99, 255, 0.05)';
-  const dotEmptyBorder = isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)';
-  const dotEmptyBg = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)';
-  const pinKeyBg = isDark ? 'rgba(108,99,255,0.12)' : 'rgba(108,99,255,0.08)';
-  const btnBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#0F0F1E' },
 
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: bg },
+  // ── Locked / PIN screen ──
+  lockedContainer: { flex: 1, paddingHorizontal: 32 },
+  topSection: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 20 },
+  bottomSection: { flex: 1.5, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 10, width: '100%' },
+  iconCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(108, 99, 255, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 1, borderColor: 'rgba(108, 99, 255, 0.2)' },
+  lockedTitle: { color: '#FFF', fontSize: 26, fontWeight: '700', marginBottom: 10 },
+  lockedSubtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  errorText: { color: '#FF4757', fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 8 },
 
-    // ── Locked / PIN screen ──
-    lockedContainer: { flex: 1, paddingHorizontal: 32 },
-    topSection: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 20 },
-    bottomSection: { flex: 1.5, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 10, width: '100%' },
-    iconCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 1, borderColor: border },
-    lockedTitle: { color: text, fontSize: 26, fontWeight: '700', marginBottom: 10 },
-    lockedSubtitle: { color: subtext, fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-    errorText: { color: '#FF4757', fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 8 },
+  // ── PIN dots ──
+  dotsRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },
+  dot: { width: 14, height: 14, borderRadius: 7 },
+  dotFilled: { backgroundColor: '#6C63FF' },
+  dotEmpty: { backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
 
-    // ── PIN dots ──
-    dotsRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },
-    dot: { width: 14, height: 14, borderRadius: 7 },
-    dotFilled: { backgroundColor: '#6C63FF' },
-    dotEmpty: { backgroundColor: dotEmptyBg, borderWidth: 1, borderColor: dotEmptyBorder },
+  // ── PIN pad ──
+  pinPad: { width: '100%', maxWidth: 320, alignSelf: 'center' },
+  pinRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  pinKey: { width: '28%', aspectRatio: 1, borderRadius: 100, backgroundColor: 'rgba(108,99,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(108,99,255,0.25)' },
+  pinKeyEmpty: { width: '28%', aspectRatio: 1 },
+  pinKeyText: { color: '#FFF', fontSize: 26, fontWeight: '600' },
 
-    // ── PIN pad ──
-    pinPad: { width: '100%', maxWidth: 320, alignSelf: 'center' },
-    pinRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-    pinKey: { width: '28%', aspectRatio: 1, borderRadius: 100, backgroundColor: pinKeyBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: border },
-    pinKeyEmpty: { width: '28%', aspectRatio: 1 },
-    pinKeyText: { color: text, fontSize: 26, fontWeight: '600' },
+  // ── Header ──
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: '700' },
+  lockNowBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)' },
+  lockNowText: { color: '#FF4757', fontSize: 14, fontWeight: '600' },
 
-    // ── Header ──
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: border },
-    headerTitle: { color: text, fontSize: 24, fontWeight: '700' },
-    lockNowBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: btnBg },
-    lockNowText: { color: '#FF4757', fontSize: 14, fontWeight: '600' },
-
-    // ── List ──
-    listContent: { padding: 20 },
-    cardContainer: { marginBottom: 16, position: 'relative', overflow: 'hidden', borderRadius: 20, backgroundColor: card, borderWidth: 1, borderColor: border },
-    behindButtons: { position: 'absolute', right: 0, top: 0, bottom: 0, flexDirection: 'row', width: ACTION_BTN_WIDTH * 2, zIndex: 0 },
-    behindBtn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    behindBtnText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },
-    docCard: { backgroundColor: card, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 1 },
-    selectedCard: { borderColor: '#6C63FF', backgroundColor: 'rgba(108, 99, 255, 0.05)' },
-    checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: border, marginRight: 12, alignItems: 'center', justifyContent: 'center' },
-    checkboxSelected: { backgroundColor: '#6C63FF', borderColor: '#6C63FF' },
-    docInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-    docIconWrapper: { width: 50, height: 50, borderRadius: 12, backgroundColor: bg, overflow: 'hidden', marginRight: 16 },
-    thumbnail: { width: '100%', height: '100%', opacity: 0.7 },
-    docText: { flex: 1 },
-    docName: { color: text, fontSize: 16, fontWeight: '600', marginBottom: 4, lineHeight: 22 },
-    docDate: { color: subtext, fontSize: 12 },
-    emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, opacity: 0.5 },
-    emptyText: { color: text, fontSize: 18, fontWeight: '600', marginTop: 20 },
-    emptySubtext: { color: subtext, fontSize: 14, textAlign: 'center', marginTop: 8 },
-    resetBtn: { marginTop: 28, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,71,87,0.35)', backgroundColor: 'rgba(255,71,87,0.08)' },
-    resetBtnText: { color: '#FF4757', fontSize: 13, fontWeight: '600', textAlign: 'center' },
-    resetBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 12, marginBottom: 4, backgroundColor: 'rgba(255,71,87,0.08)', borderWidth: 1, borderColor: 'rgba(255,71,87,0.25)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
-    resetBannerIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,71,87,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    resetBannerTitle: { color: '#FF4757', fontSize: 14, fontWeight: '700' },
-    resetBannerSub: { color: 'rgba(255,71,87,0.6)', fontSize: 12, marginTop: 1 },
-  });
-};
+  // ── List ──
+  listContent: { padding: 20 },
+  cardContainer: { marginBottom: 16, position: 'relative', overflow: 'hidden', borderRadius: 20, backgroundColor: '#1A1A2E', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  behindButtons: { position: 'absolute', right: 0, top: 0, bottom: 0, flexDirection: 'row', width: ACTION_BTN_WIDTH * 2, zIndex: 0 },
+  behindBtn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  behindBtnText: { color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 4 },
+  docCard: { backgroundColor: '#1A1A2E', padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 1 },
+  selectedCard: { borderColor: '#6C63FF', backgroundColor: 'rgba(108, 99, 255, 0.05)' },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', marginRight: 12, alignItems: 'center', justifyContent: 'center' },
+  checkboxSelected: { backgroundColor: '#6C63FF', borderColor: '#6C63FF' },
+  docInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  docIconWrapper: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#0F0F1E', overflow: 'hidden', marginRight: 16 },
+  thumbnail: { width: '100%', height: '100%', opacity: 0.7 },
+  docText: { flex: 1 },
+  docName: { color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 4, lineHeight: 22 },
+  docDate: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, opacity: 0.5 },
+  emptyText: { color: '#FFF', fontSize: 18, fontWeight: '600', marginTop: 20 },
+  emptySubtext: { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  resetBtn: { marginTop: 28, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,71,87,0.35)', backgroundColor: 'rgba(255,71,87,0.08)' },
+  resetBtnText: { color: '#FF4757', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  resetBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 12, marginBottom: 4, backgroundColor: 'rgba(255,71,87,0.08)', borderWidth: 1, borderColor: 'rgba(255,71,87,0.25)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
+  resetBannerIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,71,87,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  resetBannerTitle: { color: '#FF4757', fontSize: 14, fontWeight: '700' },
+  resetBannerSub: { color: 'rgba(255,71,87,0.6)', fontSize: 12, marginTop: 1 },
+});

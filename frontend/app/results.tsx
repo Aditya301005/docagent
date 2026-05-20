@@ -521,6 +521,20 @@ export default function ResultsScreen() {
       console.error('Error exporting text:', error);
     }
   };
+  const handleOpenDocument = async () => {
+    if (!imageUri) return;
+    try {
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Not available', 'Document sharing/opening is not supported on this device.');
+        return;
+      }
+      await Sharing.shareAsync(imageUri, { dialogTitle: 'Open Document' });
+    } catch (e) {
+      console.log('Error opening document:', e);
+      Alert.alert('Error', 'Could not open the document.');
+    }
+  };
 
 
 
@@ -568,21 +582,35 @@ export default function ResultsScreen() {
               <Text className="text-center text-xs text-slate-400 pb-2">
                 Page {pageIndex + 1} of {batchPages.length}
               </Text>
+              <View className="items-center pb-4">
+                <TouchableOpacity onPress={handleOpenDocument} className="bg-indigo-100 dark:bg-indigo-900/50 px-4 py-2 rounded-lg">
+                  <Text className="text-indigo-600 dark:text-indigo-400 font-semibold text-sm">👁️ View Original Files</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : imageUri ? (
             <View className="p-4 items-center bg-slate-100 dark:bg-slate-800/50">
               <Image
                 source={{ uri: imageUri }}
-                style={{ width: W * 0.5, height: W * 0.7, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB' }}
+                style={{ width: W * 0.5, height: W * 0.7, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 }}
                 resizeMode="cover"
               />
+              <TouchableOpacity onPress={handleOpenDocument} className="bg-indigo-100 dark:bg-indigo-900/50 px-4 py-2 rounded-lg">
+                <Text className="text-indigo-600 dark:text-indigo-400 font-semibold text-sm">👁️ View Original Image</Text>
+              </TouchableOpacity>
             </View>
           ) : null
         )}
         {imageUri && mimeType === 'application/pdf' && (
           <View className="p-8 items-center bg-slate-100 dark:bg-slate-800/50">
-            <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">PDF selected</Text>
-            <Text className="mt-1 text-xs text-slate-500 dark:text-slate-400" numberOfLines={1}>{filename || 'document.pdf'}</Text>
+            <View className="w-24 h-32 bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-200 dark:border-slate-600 items-center justify-center mb-4">
+              <Text style={{ fontSize: 40 }}>📄</Text>
+            </View>
+            <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">PDF Document</Text>
+            <Text className="mt-1 text-xs text-slate-500 dark:text-slate-400 mb-5" numberOfLines={1}>{filename || 'document.pdf'}</Text>
+            <TouchableOpacity onPress={handleOpenDocument} className="bg-indigo-100 dark:bg-indigo-900/50 px-4 py-2 rounded-lg">
+              <Text className="text-indigo-600 dark:text-indigo-400 font-semibold text-sm">👁️ View Original PDF</Text>
+            </TouchableOpacity>
           </View>
         )}
 
