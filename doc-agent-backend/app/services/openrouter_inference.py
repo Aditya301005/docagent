@@ -27,8 +27,15 @@ ALL_FREE_MODELS = [
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
-# Use the same pool for QA
-QA_MODELS = ALL_FREE_MODELS
+EXTRACTION_MODELS = [
+    "google/gemini-2.5-flash-lite",
+    "deepseek/deepseek-v4-flash:free",
+]
+
+QA_MODELS = [
+    "deepseek/deepseek-v4-flash:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+]
 
 def _get_headers(api_key: str):
     return {
@@ -150,6 +157,7 @@ def _race_models(
     system_message: str,
     api_key: str,
     validation_fn,
+    models: list[str],
     file_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
 ) -> dict:
@@ -158,7 +166,7 @@ def _race_models(
     Firing 6 at once causes instant 429 Rate Limits.
     We now try them sequentially; the first one to succeed wins."""
     
-    for model in ALL_FREE_MODELS:
+    for model in models:
         logger.info("Trying model: %s", model)
         res = _call_single_model_generic(model, prompt, system_message, api_key, file_bytes, mime_type)
         
@@ -197,7 +205,7 @@ Return ONLY a JSON object:
     def _is_valid(data):
         return isinstance(data, dict) and "class" in data
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, EXTRACTION_MODELS, file_bytes, mime_type)
     
     if "data" not in race_result:
         logger.error("Classification race failed completely.")
@@ -245,9 +253,11 @@ If none found, return []."""
     system_msg = "You are an expert entity extractor. Respond ONLY with a valid JSON array."
     
     def _is_valid(data):
-        return isinstance(data, list)
+        if isinstance(data, list):
+            return len(data) > 0 and isinstance(data[0], dict)
+        return False
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, EXTRACTION_MODELS, file_bytes, mime_type)
     
     if "data" not in race_result:
         logger.error("Entity extraction race failed completely.")
@@ -489,7 +499,7 @@ Return ONLY a valid JSON object (no markdown, no explanation):
     def _is_valid(data):
         return isinstance(data, dict) and "answer" in data and str(data["answer"]).strip()
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, QA_MODELS, file_bytes, mime_type)
 
     if "data" not in race_result:
         return {"answer": "All models failed or timed out.", "confidence": 0.0, "source": "openrouter_race_failed"}
@@ -541,7 +551,7 @@ Return ONLY a valid JSON object in this exact format (no markdown, no explanatio
     def _is_valid(data):
         return isinstance(data, dict) and "classification" in data and "entities" in data
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, EXTRACTION_MODELS, file_bytes, mime_type)
     
     if "data" not in race_result:
         logger.error("Unified analysis race failed completely.")

@@ -101,10 +101,11 @@ const BellIcon = ({ color = '#EC4899' }: { color?: string }) => (
 
 type EntityAction = 'call' | 'email' | 'maps' | 'reminder' | null;
 const getEntityAction = (t: string): EntityAction => {
-  if (t === 'phone') return 'call';
-  if (t === 'email') return 'email';
-  if (t === 'address' || t === 'company') return 'maps';
-  if (t === 'date') return 'reminder';
+  const lower = t.toLowerCase();
+  if (lower.includes('phone') || lower.includes('tel')) return 'call';
+  if (lower.includes('email') || lower.includes('e-mail')) return 'email';
+  if (lower.includes('address') || lower.includes('location') || lower.includes('company')) return 'maps';
+  if (lower.includes('date') || lower.includes('time')) return 'reminder';
   return null;
 };
 const actionMeta: Record<string, { label: string; color: string }> = {
