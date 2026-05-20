@@ -38,8 +38,7 @@ CLASS_NAMES = [
     "scientific_report", "specification",
 ]
 
-# ── Gemini model to use ─────────────────────────────────────────────────────
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
 # ---------------------------------------------------------------------------
