@@ -23,8 +23,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLAMA_MODEL = "openrouter/auto"
 
 ALL_FREE_MODELS = [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "google/gemini-2.0-flash-lite-preview-02-05:free",
 ]
 
 # Use the same pool for QA
@@ -276,7 +276,7 @@ def _call_gemma_vision_qa(
     For PDFs:   converts up to max_vision_pages most-relevant pages to JPEG
                 and sends each as an image_url part.
     """
-    model = "google/gemma-4-31b-it:free"
+    model = "meta-llama/llama-3.2-11b-vision-instruct:free"
     image_contents: list[dict] = []
 
     try:
