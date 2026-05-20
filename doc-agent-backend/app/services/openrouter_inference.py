@@ -23,8 +23,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLAMA_MODEL = "openrouter/auto"
 
 ALL_FREE_MODELS = [
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "google/gemini-2.0-flash-lite-preview-02-05:free",
+    "deepseek/deepseek-v4-flash:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
 # Use the same pool for QA
