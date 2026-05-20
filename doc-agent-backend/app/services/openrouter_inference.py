@@ -23,8 +23,11 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLAMA_MODEL = "openrouter/auto"
 
 ALL_FREE_MODELS = [
-    "deepseek/deepseek-v4-flash:free",           # Main model (DeepSeek V4 Flash Free)
-    "google/gemini-2.5-flash-lite",              # Fallback model (Gemini 2.5 Flash Lite)
+    "google/gemini-2.5-flash:free",              # Primary vision-capable free model
+    "google/gemini-2.5-flash-lite:free",         # Fast vision-capable free model
+    "meta-llama/llama-3.3-70b-instruct:free",    # High-quality text model
+    "deepseek/deepseek-r1:free",                 # Reasoning text model
+    "openrouter/free",                           # Catch-all free router
 ]
 
 # Use the same pool for QA
@@ -77,15 +80,54 @@ async def _call_openrouter(prompt: str, api_key: str) -> str:
         data = response.json()
         return data["choices"][0]["message"]["content"]
 
-def _call_single_model_generic(model: str, prompt: str, system_message: str, api_key: str) -> dict:
-    """Call one text-only OpenRouter model and return parsed JSON."""
+def _call_single_model_generic(
+    model: str,
+    prompt: str,
+    system_message: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Call one OpenRouter model (text or vision) and return parsed JSON."""
     try:
+        is_vision = any(x in model.lower() for x in ["gemini", "gemma", "vision", "vl", "free"])
+        
+        user_content: str | list[dict[str, Any]] = prompt
+        if file_bytes and is_vision:
+            image_contents = []
+            if mime_type == "application/pdf":
+                try:
+                    import fitz
+                    doc = fitz.open(stream=file_bytes, filetype="pdf")
+                    mat = fitz.Matrix(120 / 72, 120 / 72)
+                    for idx in range(min(3, len(doc))):
+                        pix = doc[idx].get_pixmap(matrix=mat)
+                        b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
+                        image_contents.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                        })
+                except Exception as exc:
+                    logger.warning("PDF vision render failed in openrouter_inference: %s", exc)
+            else:
+                try:
+                    b64 = base64.b64encode(file_bytes).decode("utf-8")
+                    image_contents.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"},
+                    })
+                except Exception as exc:
+                    logger.warning("Image base64 encoding failed: %s", exc)
+
+            if image_contents:
+                user_content = image_contents + [{"type": "text", "text": prompt}]
+
         with httpx.Client() as client:
             payload = {
                 "model": model,
                 "messages": [
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.1,
                 "max_tokens": 2048,
@@ -94,7 +136,7 @@ def _call_single_model_generic(model: str, prompt: str, system_message: str, api
                 OPENROUTER_URL,
                 headers=_get_headers(api_key),
                 json=payload,
-                timeout=15.0, # Fail fast if rate-limited or queued
+                timeout=30.0 if is_vision else 15.0,
             )
             response.raise_for_status()
             raw_content = response.json()["choices"][0]["message"]["content"]
@@ -106,7 +148,14 @@ def _call_single_model_generic(model: str, prompt: str, system_message: str, api
         logger.warning("Model %s failed: %s", model, exc)
         return {"error": str(exc), "model": model}
 
-def _race_models(prompt: str, system_message: str, api_key: str, validation_fn) -> dict:
+def _race_models(
+    prompt: str,
+    system_message: str,
+    api_key: str,
+    validation_fn,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
     """🏁 SEQUENTIAL FALLBACK PATTERN: 
     Free tier accounts strictly limit concurrent requests. 
     Firing 6 at once causes instant 429 Rate Limits.
@@ -114,7 +163,7 @@ def _race_models(prompt: str, system_message: str, api_key: str, validation_fn) 
     
     for model in ALL_FREE_MODELS:
         logger.info("Trying model: %s", model)
-        res = _call_single_model_generic(model, prompt, system_message, api_key)
+        res = _call_single_model_generic(model, prompt, system_message, api_key, file_bytes, mime_type)
         
         if "data" in res and validation_fn(res["data"]):
             logger.info("🏆 Winner: model=%s", res["model"])
@@ -123,13 +172,18 @@ def _race_models(prompt: str, system_message: str, api_key: str, validation_fn) 
     logger.error("All models failed sequentially.")
     return {"error": "All models failed", "model": "none"}
 
-def classify_document_openrouter(ocr_text: str, api_key: str) -> dict:
-    """Classify document based on OCR text using OpenRouter."""
+def classify_document_openrouter(
+    ocr_text: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Classify document based on OCR text or image using OpenRouter."""
     class_list = ", ".join(CLASS_NAMES)
-    prompt = f"""Analyze the following OCR text from a document and classify it into EXACTLY ONE of these categories:
+    prompt = f"""Analyze the following document (OCR text and/or page images provided) and classify it into EXACTLY ONE of these categories:
 {class_list}
 
-OCR Text:
+OCR Text (if available):
 \"\"\"
 {ocr_text[:4000]}
 \"\"\"
@@ -146,7 +200,7 @@ Return ONLY a JSON object:
     def _is_valid(data):
         return isinstance(data, dict) and "class" in data
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
     
     if "error" in race_result and "data" not in race_result:
         logger.error("Classification race failed completely.")
@@ -170,12 +224,17 @@ Return ONLY a JSON object:
         "source": f"openrouter_race ({race_result.get('model')})"
     }
 
-def extract_entities_openrouter(ocr_text: str, api_key: str) -> list[dict]:
-    """Extract entities from OCR text using OpenRouter."""
-    prompt = f"""Extract important information from the following OCR text.
+def extract_entities_openrouter(
+    ocr_text: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> list[dict]:
+    """Extract entities from OCR text or image using OpenRouter."""
+    prompt = f"""Extract important information from the following document (OCR text and/or page images provided).
 Target types: date, total, company, address, phone, email, invoice_number, tax, name.
 
-OCR Text:
+OCR Text (if available):
 \"\"\"
 {ocr_text[:4000]}
 \"\"\"
@@ -191,7 +250,7 @@ If none found, return []."""
     def _is_valid(data):
         return isinstance(data, list)
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
     
     if "error" in race_result and "data" not in race_result:
         logger.error("Entity extraction race failed completely.")
@@ -428,12 +487,12 @@ Return ONLY a valid JSON object (no markdown, no explanation):
   "found": <true/false>
 }}"""
 
-    system_msg = "You are an expert document analyst. Read all provided text carefully and answer questions thoroughly. Respond ONLY with valid JSON."
+    system_msg = "You are an expert document analyst. Read all provided text and images carefully and answer questions thoroughly. Respond ONLY with valid JSON."
     
     def _is_valid(data):
         return isinstance(data, dict) and "answer" in data and str(data["answer"]).strip()
 
-    race_result = _race_models(prompt, system_msg, api_key, _is_valid)
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
 
     if "error" in race_result and "data" not in race_result:
         return {"answer": "All models failed or timed out.", "confidence": 0.0, "source": "openrouter_race_failed"}

@@ -1,10 +1,13 @@
 import io
+import logging
 import fitz  # PyMuPDF
 from PIL import Image, ImageEnhance
 import pytesseract
 from pytesseract import Output
 from app.core.config import settings
 from app.services.file_handler import infer_mime_type
+
+logger = logging.getLogger(__name__)
 
 # Explicitly bind tesseract command from Windows environment setup
 pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
@@ -23,28 +26,33 @@ def run_ocr(file_bytes: bytes, mime_type: str) -> str:
     For PDFs: iterates ALL pages and concatenates OCR text from each.
     Returns plain text string.
     """
-    detected_mime = infer_mime_type(file_bytes, mime_type)
+    try:
+        detected_mime = infer_mime_type(file_bytes, mime_type)
 
-    if detected_mime == "application/pdf":
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        all_text_parts = []
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            mat = fitz.Matrix(200 / 72, 200 / 72)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
-            image = Image.open(io.BytesIO(img_bytes))
+        if detected_mime == "application/pdf":
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            all_text_parts = []
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                mat = fitz.Matrix(200 / 72, 200 / 72)
+                pix = page.get_pixmap(matrix=mat)
+                img_bytes = pix.tobytes("png")
+                image = Image.open(io.BytesIO(img_bytes))
+                image = _enhance_image(image)
+                text = pytesseract.image_to_string(image, lang="eng").strip()
+                if text:
+                    all_text_parts.append(f"--- Page {page_num + 1} ---\n{text}")
+            return "\n\n".join(all_text_parts)
+        else:
+            image = Image.open(io.BytesIO(file_bytes))
+            if image.mode != "RGB":
+                image = image.convert("RGB")
             image = _enhance_image(image)
-            text = pytesseract.image_to_string(image, lang="eng").strip()
-            if text:
-                all_text_parts.append(f"--- Page {page_num + 1} ---\n{text}")
-        return "\n\n".join(all_text_parts)
-    else:
-        image = Image.open(io.BytesIO(file_bytes))
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        image = _enhance_image(image)
-        return pytesseract.image_to_string(image, lang="eng").strip()
+            return pytesseract.image_to_string(image, lang="eng").strip()
+    except Exception as exc:
+        logger.warning("OCR execution failed (Tesseract may not be installed or configured): %s. Multimodal vision models will be used instead.", exc)
+        return ""
+
 
 
 def run_ocr_with_boxes(file_bytes: bytes, mime_type: str) -> list[dict]:

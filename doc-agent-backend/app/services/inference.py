@@ -124,7 +124,7 @@ def classify_document(
     if _use_openrouter():
         try:
             from app.services.openrouter_inference import classify_document_openrouter
-            result = classify_document_openrouter(ocr_text, _get_openrouter_key())
+            result = classify_document_openrouter(ocr_text, _get_openrouter_key(), file_bytes, mime_type)
             return _apply_validation_layer(result)
         except Exception as exc:
             logger.error("OpenRouter classification failed: %s", exc)
@@ -193,7 +193,7 @@ def extract_entities(
     if _use_openrouter():
         try:
             from app.services.openrouter_inference import extract_entities_openrouter
-            return extract_entities_openrouter(ocr_text, _get_openrouter_key())
+            return extract_entities_openrouter(ocr_text, _get_openrouter_key(), file_bytes, mime_type)
         except Exception as exc:
             logger.error("OpenRouter entity extraction failed: %s", exc)
 
