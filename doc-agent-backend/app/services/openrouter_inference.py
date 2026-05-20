@@ -515,28 +515,28 @@ def analyze_document_openrouter(
 ) -> dict:
     """Classify and extract entities in ONE pass using OpenRouter."""
     class_list = ", ".join(CLASS_NAMES)
-    prompt = f"""Analyze the following document (OCR text and/or page images provided). You have TWO tasks:
+    prompt = f"""Analyze the following document (OCR text provided). You have TWO tasks:
 1) Classify the document into EXACTLY ONE of these categories: {class_list}
-2) Extract ALL important named entities and key-value pairs (date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
+2) Extract ALL important named entities and key-value pairs (e.g. date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
 
-OCR Text (if available):
+OCR Text (entire text):
 \"\"\"
-{ocr_text[:4000]}
+{ocr_text[:30000]}
 \"\"\"
 
-Return ONLY a valid JSON object in this exact format (no markdown, no explanation):
+Return ONLY a valid JSON object in this exact format (no markdown, no explanation). The "entities" MUST be a list/array of objects!
 {{
   "classification": {{
     "class": "<category_name>",
-    "confidence": <float 0.0-1.0>,
+    "confidence": 0.95,
     "reasoning": "<brief explanation>"
   }},
   "entities": [
-    {{"type": "<type>", "value": "<extracted_value>", "confidence": <0.0-1.0>}}
+    {{"type": "<type>", "value": "<extracted_value>", "confidence": 0.95}}
   ]
 }}"""
 
-    system_msg = "You are an expert document analyst. Respond ONLY with valid JSON."
+    system_msg = "You are an expert document analyst. Read the OCR text carefully. Respond ONLY with valid JSON containing classification and entities."
     
     def _is_valid(data):
         return isinstance(data, dict) and "classification" in data and "entities" in data
