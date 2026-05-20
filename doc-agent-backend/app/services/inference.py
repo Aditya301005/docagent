@@ -370,11 +370,45 @@ def answer_question(
 
 
 # ─── Main pipeline entry point (called by Celery task) ───────────────────────
+def analyze_document(
+    file_bytes: bytes, ocr_text: str, mime_type: str = "image/jpeg"
+) -> dict:
+    """Unified single-pass analysis."""
+    # ── Path 1: OpenRouter ───────────────────────────────────
+    if _use_openrouter():
+        try:
+            from app.services.openrouter_inference import analyze_document_openrouter
+            result = analyze_document_openrouter(ocr_text, _get_openrouter_key(), file_bytes, mime_type)
+            result["classification"] = _apply_validation_layer(result.get("classification", {}))
+            return result
+        except Exception as exc:
+            logger.error("OpenRouter unified analysis failed: %s", exc)
+
+    # ── Path 2: Gemini ────────────────────────────────────────────────────
+    if _use_gemini():
+        try:
+            from app.services.gemini_inference import analyze_document_gemini
+            result = analyze_document_gemini(file_bytes, ocr_text, mime_type, _get_gemini_key())
+            result["classification"] = _apply_validation_layer(result.get("classification", {}))
+            return result
+        except Exception as exc:
+            logger.error("Gemini unified analysis failed, trying local: %s", exc)
+
+    # ── Path 3: Local Fallbacks ─────────────────────────────────────────
+    classification = classify_document(file_bytes, ocr_text, mime_type)
+    entities = extract_entities(file_bytes, ocr_text, mime_type)
+    return {
+        "classification": classification,
+        "entities": entities
+    }
+
+
+# ─── Main pipeline entry point (called by Celery task) ───────────────────────
 def run_inference(
     file_bytes: bytes, ocr_text: str, mime_type: str = "image/jpeg"
 ) -> dict:
     """
-    Run the full inference pipeline: classify + extract entities.
+    Run the full inference pipeline: classify + extract entities in ONE pass.
     Called by the Celery process_document_task.
     """
     t0 = time.perf_counter()
@@ -388,8 +422,9 @@ def run_inference(
         
     logger.info("run_inference: using backend=%s", backend)
 
-    classification = classify_document(file_bytes, ocr_text, mime_type)
-    entities = extract_entities(file_bytes, ocr_text, mime_type)
+    analysis = analyze_document(file_bytes, ocr_text, mime_type)
+    classification = analysis.get("classification", {})
+    entities = analysis.get("entities", [])
 
     processing_time_ms = int((time.perf_counter() - t0) * 1000)
 

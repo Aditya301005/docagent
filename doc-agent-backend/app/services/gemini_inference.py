@@ -358,3 +358,90 @@ If the information is truly absent from the entire document, set answer to "" an
     except Exception as exc:
         logger.error("Gemini Q&A failed: %s", exc)
         return {"answer": "", "confidence": 0.0, "source": "gemini_error"}
+
+def analyze_document_gemini(
+    file_bytes: bytes,
+    ocr_text: str,
+    mime_type: str,
+    api_key: str,
+) -> dict:
+    """
+    Unified function to classify and extract entities in ONE pass.
+    """
+    client = _init_client(api_key)
+    image_parts = _get_content_parts(file_bytes, mime_type)
+    class_list = ", ".join(CLASS_NAMES)
+    ocr_snippet = (ocr_text or "")
+
+    prompt = f"""You are an expert document analyst.
+
+Analyze ALL document page images and OCR text below. You have TWO tasks:
+1) Classify the document into EXACTLY ONE of these categories: {class_list}
+2) Extract ALL important named entities and key-value pairs (date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
+
+OCR text (from all pages):
+\"\"\"
+{ocr_snippet}
+\"\"\"
+
+Respond with ONLY valid JSON in this exact format (no extra text):
+{{
+  "classification": {{
+    "class": "<category_name>",
+    "confidence": <float 0.0-1.0>,
+    "reasoning": "<brief explanation>"
+  }},
+  "entities": [
+    {{"type": "<type>", "value": "<extracted_value>", "confidence": <0.0-1.0>}}
+  ]
+}}"""
+
+    try:
+        contents = [*image_parts, prompt]
+        response = _generate_with_retry(client, GEMINI_MODEL, contents)
+        data = _parse_json_from_response(response.text)
+
+        # Parse Classification
+        clf_data = data.get("classification", {})
+        doc_class = str(clf_data.get("class", "unknown")).lower().replace(" ", "_")
+        if doc_class not in CLASS_NAMES:
+            for name in CLASS_NAMES:
+                if name in doc_class or doc_class in name:
+                    doc_class = name
+                    break
+            else:
+                doc_class = "unknown"
+                
+        confidence = float(clf_data.get("confidence", 0.85))
+        
+        classification = {
+            "class": doc_class,
+            "confidence": max(0.0, min(1.0, confidence)),
+            "reasoning": clf_data.get("reasoning", ""),
+            "source": "gemini",
+        }
+
+        # Parse Entities
+        raw_entities = data.get("entities", [])
+        entities = []
+        if isinstance(raw_entities, list):
+            for item in raw_entities:
+                if not isinstance(item, dict): continue
+                etype = str(item.get("type", "unknown")).lower().strip()
+                val = str(item.get("value", "")).strip()
+                econf = max(0.0, min(1.0, float(item.get("confidence", 0.85))))
+                if val:
+                    entities.append({"type": etype, "value": val, "confidence": round(econf, 4)})
+
+        return {
+            "classification": classification,
+            "entities": entities
+        }
+
+    except Exception as exc:
+        logger.error("Gemini combined analysis failed: %s", exc)
+        return {
+            "classification": {"class": "unknown", "confidence": 0.0, "source": "gemini_error"},
+            "entities": []
+        }
+

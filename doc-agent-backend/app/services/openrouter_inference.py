@@ -506,3 +506,84 @@ Return ONLY a valid JSON object (no markdown, no explanation):
         "confidence": confidence if found else 0.0,
         "source": f"openrouter_race ({best_model})",
     }
+
+def analyze_document_openrouter(
+    ocr_text: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Classify and extract entities in ONE pass using OpenRouter."""
+    class_list = ", ".join(CLASS_NAMES)
+    prompt = f"""Analyze the following document (OCR text and/or page images provided). You have TWO tasks:
+1) Classify the document into EXACTLY ONE of these categories: {class_list}
+2) Extract ALL important named entities and key-value pairs (date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
+
+OCR Text (if available):
+\"\"\"
+{ocr_text[:4000]}
+\"\"\"
+
+Return ONLY a valid JSON object in this exact format (no markdown, no explanation):
+{{
+  "classification": {{
+    "class": "<category_name>",
+    "confidence": <float 0.0-1.0>,
+    "reasoning": "<brief explanation>"
+  }},
+  "entities": [
+    {{"type": "<type>", "value": "<extracted_value>", "confidence": <0.0-1.0>}}
+  ]
+}}"""
+
+    system_msg = "You are an expert document analyst. Respond ONLY with valid JSON."
+    
+    def _is_valid(data):
+        return isinstance(data, dict) and "classification" in data and "entities" in data
+
+    race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
+    
+    if "data" not in race_result:
+        logger.error("Unified analysis race failed completely.")
+        return {
+            "classification": {"class": "unknown", "confidence": 0.0, "source": "openrouter_error"},
+            "entities": []
+        }
+
+    data = race_result["data"]
+    best_model = race_result.get("model", "unknown")
+    
+    # Parse Classification
+    clf_data = data.get("classification", {})
+    doc_class = str(clf_data.get("class", "unknown")).lower().replace(" ", "_")
+    if doc_class not in CLASS_NAMES:
+        for name in CLASS_NAMES:
+            if name in doc_class or doc_class in name:
+                doc_class = name
+                break
+        else:
+            doc_class = "unknown"
+            
+    classification = {
+        "class": doc_class,
+        "confidence": float(clf_data.get("confidence", 0.8)),
+        "reasoning": clf_data.get("reasoning", ""),
+        "source": f"openrouter_race ({best_model})"
+    }
+    
+    # Parse Entities
+    raw_entities = data.get("entities", [])
+    entities = []
+    if isinstance(raw_entities, list):
+        for item in raw_entities:
+            if not isinstance(item, dict): continue
+            etype = str(item.get("type", "unknown")).lower().strip()
+            val = str(item.get("value", "")).strip()
+            econf = max(0.0, min(1.0, float(item.get("confidence", 0.85))))
+            if val:
+                entities.append({"type": etype, "value": val, "confidence": round(econf, 4)})
+
+    return {
+        "classification": classification,
+        "entities": entities
+    }
