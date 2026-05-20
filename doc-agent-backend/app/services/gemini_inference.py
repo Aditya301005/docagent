@@ -25,6 +25,7 @@ import io
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from google import genai
@@ -51,6 +52,23 @@ GEMINI_MODEL = "gemini-2.5-flash"
 def _init_client(api_key: str) -> genai.Client:
     """Configure the SDK and return a client instance."""
     return genai.Client(api_key=api_key)
+
+def _generate_with_retry(client: genai.Client, model: str, contents: list, max_retries: int = 3, initial_backoff: float = 2.0):
+    """Call Gemini API with exponential backoff for 503 and 429 errors."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return client.models.generate_content(model=model, contents=contents)
+        except Exception as exc:
+            last_exc = exc
+            err_str = str(exc)
+            if "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "ResourceExhausted" in err_str:
+                sleep_time = initial_backoff * (2 ** attempt)
+                logger.warning(f"Gemini API busy (attempt {attempt+1}/{max_retries}). Retrying in {sleep_time}s... Error: {err_str}")
+                time.sleep(sleep_time)
+            else:
+                raise exc
+    raise last_exc
 
 
 def _get_content_parts(file_bytes: bytes, mime_type: str) -> list:
@@ -155,10 +173,7 @@ Respond with ONLY valid JSON in this exact format (no extra text):
 
     try:
         contents = [*image_parts, prompt]
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
-        )
+        response = _generate_with_retry(client, GEMINI_MODEL, contents)
         data = _parse_json_from_response(response.text)
 
         doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
@@ -235,10 +250,7 @@ If no entities are found, return an empty array: []"""
 
     try:
         contents = [*image_parts, prompt]
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
-        )
+        response = _generate_with_retry(client, GEMINI_MODEL, contents)
         data = _parse_json_from_response(response.text)
 
         if not isinstance(data, list):
@@ -329,10 +341,7 @@ If the information is truly absent from the entire document, set answer to "" an
 
     try:
         contents = [*content_parts, prompt]
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
-        )
+        response = _generate_with_retry(client, GEMINI_MODEL, contents)
         data = _parse_json_from_response(response.text)
 
         answer = str(data.get("answer", "")).strip()
