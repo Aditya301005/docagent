@@ -304,27 +304,28 @@ function PinLockScreen({ onSuccess }: { onSuccess: () => void }) {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.lockedContainer}>
-        <View style={styles.iconCircle}>
-          <LockIcon />
+        <View style={styles.topSection}>
+          <View style={styles.iconCircle}>
+            <LockIcon size={60} />
+          </View>
+          <Text style={styles.lockedTitle}>Secure Vault</Text>
+          <Text style={styles.lockedSubtitle}>{subtitle}</Text>
+          <PinDots filled={activePin.length} shake={shakeAnim} />
+          {error ? <Text style={styles.errorText}>{error}</Text> : <View style={{ height: 20 }} />}
         </View>
-        <Text style={styles.lockedTitle}>Secure Vault</Text>
-        <Text style={styles.lockedSubtitle}>{subtitle}</Text>
 
-        <PinDots filled={activePin.length} shake={shakeAnim} />
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : <View style={{ height: 20 }} />}
-
-        <PinPad onPress={handleKey} />
-
-        {mode === 'unlock' && (
-          <TouchableOpacity
-            onPress={handleResetPin}
-            style={styles.resetBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.resetBtnText}>Forgot PIN? Reset Passcode</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.bottomSection}>
+          <PinPad onPress={handleKey} />
+          {mode === 'unlock' && (
+            <TouchableOpacity
+              onPress={handleResetPin}
+              style={styles.resetBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.resetBtnText}>Forgot PIN? Reset Passcode</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -514,23 +515,25 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0F0F1E' },
 
   // ── Locked / PIN screen ──
-  lockedContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  iconCircle: { width: 140, height: 140, borderRadius: 70, backgroundColor: 'rgba(108, 99, 255, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 28, borderWidth: 1, borderColor: 'rgba(108, 99, 255, 0.2)' },
-  lockedTitle: { color: '#FFF', fontSize: 28, fontWeight: '700', marginBottom: 10 },
-  lockedSubtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 36 },
+  lockedContainer: { flex: 1, paddingHorizontal: 32 },
+  topSection: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 20 },
+  bottomSection: { flex: 1.5, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 10, width: '100%' },
+  iconCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(108, 99, 255, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 1, borderColor: 'rgba(108, 99, 255, 0.2)' },
+  lockedTitle: { color: '#FFF', fontSize: 26, fontWeight: '700', marginBottom: 10 },
+  lockedSubtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
   errorText: { color: '#FF4757', fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 8 },
 
   // ── PIN dots ──
-  dotsRow: { flexDirection: 'row', gap: 18, marginBottom: 8 },
-  dot: { width: 16, height: 16, borderRadius: 8 },
+  dotsRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },
+  dot: { width: 14, height: 14, borderRadius: 7 },
   dotFilled: { backgroundColor: '#6C63FF' },
   dotEmpty: { backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
 
   // ── PIN pad ──
-  pinPad: { marginTop: 32, width: '100%', maxWidth: 300 },
-  pinRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
-  pinKey: { width: 76, height: 76, borderRadius: 38, backgroundColor: 'rgba(108,99,255,0.12)', alignItems: 'center', justifyContent: 'center', marginHorizontal: 10, borderWidth: 1, borderColor: 'rgba(108,99,255,0.25)' },
-  pinKeyEmpty: { width: 76, height: 76, marginHorizontal: 10 },
+  pinPad: { width: '100%', maxWidth: 320, alignSelf: 'center' },
+  pinRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  pinKey: { width: '28%', aspectRatio: 1, borderRadius: 100, backgroundColor: 'rgba(108,99,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(108,99,255,0.25)' },
+  pinKeyEmpty: { width: '28%', aspectRatio: 1 },
   pinKeyText: { color: '#FFF', fontSize: 26, fontWeight: '600' },
 
   // ── Header ──
