@@ -23,11 +23,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 LLAMA_MODEL = "openrouter/auto"
 
 ALL_FREE_MODELS = [
-    "google/gemini-2.5-flash:free",              # Primary vision-capable free model
-    "google/gemini-2.5-flash-lite:free",         # Fast vision-capable free model
-    "meta-llama/llama-3.3-70b-instruct:free",    # High-quality text model
-    "deepseek/deepseek-r1:free",                 # Reasoning text model
-    "openrouter/free",                           # Catch-all free router
+    "google/gemini-2.5-flash:free",
+    "google/gemini-2.5-flash-lite:free",
 ]
 
 # Use the same pool for QA
@@ -90,7 +87,7 @@ def _call_single_model_generic(
 ) -> dict:
     """Call one OpenRouter model (text or vision) and return parsed JSON."""
     try:
-        is_vision = any(x in model.lower() for x in ["gemini", "gemma", "vision", "vl", "free"])
+        is_vision = any(x in model.lower() for x in ["gemini", "gemma", "vision", "vl"])
         
         user_content: str | list[dict[str, Any]] = prompt
         if file_bytes and is_vision:
@@ -202,7 +199,7 @@ Return ONLY a JSON object:
 
     race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
     
-    if "error" in race_result and "data" not in race_result:
+    if "data" not in race_result:
         logger.error("Classification race failed completely.")
         return {"class": "unknown", "confidence": 0.0, "source": "openrouter_error"}
 
@@ -252,7 +249,7 @@ If none found, return []."""
 
     race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
     
-    if "error" in race_result and "data" not in race_result:
+    if "data" not in race_result:
         logger.error("Entity extraction race failed completely.")
         return []
 
@@ -494,7 +491,7 @@ Return ONLY a valid JSON object (no markdown, no explanation):
 
     race_result = _race_models(prompt, system_msg, api_key, _is_valid, file_bytes, mime_type)
 
-    if "error" in race_result and "data" not in race_result:
+    if "data" not in race_result:
         return {"answer": "All models failed or timed out.", "confidence": 0.0, "source": "openrouter_race_failed"}
 
     data = race_result["data"]
