@@ -45,7 +45,8 @@ def _get_openrouter_key() -> str:
     except Exception: return ""
 
 def _use_gemini() -> bool:
-    return bool(_get_gemini_key())
+    # Gemini disabled per user request
+    return False
 
 def _use_openrouter() -> bool:
     return bool(_get_openrouter_key())
