@@ -22,6 +22,9 @@ class ExtractionResult(Base):
     # Store classification details: {"class": "invoice", "confidence": 0.98, "all_scores": {...}}
     classification: Mapped[Any] = mapped_column(JSON, default=dict)
     
+    # Store complete enterprise structured extraction data (summary, risk, financial, csv export, etc.)
+    structured_data: Mapped[Any] = mapped_column(JSON, default=dict, nullable=True)
+    
     processing_time_ms: Mapped[int] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 

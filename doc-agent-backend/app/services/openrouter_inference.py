@@ -10,6 +10,7 @@ It relies heavily on high-quality OCR text provided by Tesseract.
 from __future__ import annotations
 import base64
 import json
+import json_repair
 import logging
 import re
 import httpx
@@ -33,6 +34,7 @@ EXTRACTION_MODELS = [
 ]
 
 QA_MODELS = [
+    "google/gemini-2.5-flash-lite",
     "deepseek/deepseek-v4-flash:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
@@ -53,19 +55,25 @@ CLASS_NAMES = [
 ]
 
 def _parse_json_from_response(text: str) -> Any:
-    """Extract JSON from LLM response, handling markdown fences."""
+    """Extract JSON from LLM response, handling markdown fences and broken JSON using json_repair."""
     text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
+        
+    try:
+        return json_repair.loads(text)
+    except Exception:
+        pass
 
     match = re.search(r"(\{[\s\S]+\}|\[[\s\S]+\])", text)
     if match:
         try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
+            return json_repair.loads(match.group(1))
+        except Exception:
             pass
+            
     raise ValueError(f"Could not parse JSON from OpenRouter response: {text[:300]}")
 
 async def _call_openrouter(prompt: str, api_key: str) -> str:
@@ -134,7 +142,7 @@ def _call_single_model_generic(
                     {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.1,
-                "max_tokens": 2048,
+                "max_tokens": 8192,
             }
             response = client.post(
                 OPENROUTER_URL,
@@ -523,33 +531,81 @@ def analyze_document_openrouter(
     file_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
 ) -> dict:
-    """Classify and extract entities in ONE pass using OpenRouter."""
+    """Classify and extract rich structured enterprise entities in ONE pass using OpenRouter."""
     class_list = ", ".join(CLASS_NAMES)
-    prompt = f"""Analyze the following document (OCR text provided). You have TWO tasks:
+    prompt = f"""Analyze the following document (OCR text provided). You must act as an enterprise-grade document intelligence system.
+    
 1) Classify the document into EXACTLY ONE of these categories: {class_list}
-2) Extract ALL important named entities and key-value pairs (e.g. date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
+2) Extract highly detailed structured entities, document structure, financial data, risk analysis, and normalized CSV data.
 
-OCR Text (entire text):
+OCR Text:
 \"\"\"
 {ocr_text[:30000]}
 \"\"\"
 
-Return ONLY a valid JSON object in this exact format (no markdown, no explanation). The "entities" MUST be a list/array of objects!
+Return ONLY a valid JSON object matching this exact schema (no markdown, no explanation):
 {{
-  "classification": {{
-    "class": "<category_name>",
-    "confidence": 0.95,
-    "reasoning": "<brief explanation>"
+  "document_metadata": {{
+    "document_type": "",
+    "title": "",
+    "language": "",
+    "page_count": "",
+    "processing_timestamp": "",
+    "confidence_score": ""
   }},
-  "entities": [
-    {{"type": "<type>", "value": "<extracted_value>", "confidence": 0.95}}
+  "classification": {{
+    "primary_category": "<category_from_list>",
+    "secondary_category": "",
+    "tags": []
+  }},
+  "entities": {{
+    "people": [],
+    "organizations": [],
+    "emails": [],
+    "phone_numbers": [],
+    "addresses": [],
+    "dates": [],
+    "currencies": [],
+    "amounts": [],
+    "invoice_numbers": [],
+    "contract_ids": []
+  }},
+  "document_structure": {{
+    "headings": [],
+    "sections": [],
+    "tables": [],
+    "line_items": []
+  }},
+  "financial_information": {{
+    "subtotal": "",
+    "tax": "",
+    "total_amount": "",
+    "payment_terms": "",
+    "currency": ""
+  }},
+  "summary": {{
+    "short_summary": "",
+    "detailed_summary": "",
+    "key_points": []
+  }},
+  "risk_analysis": {{
+    "important_clauses": [],
+    "missing_information": [],
+    "potential_risks": []
+  }},
+  "csv_export_data": [
+    {{
+      "field": "",
+      "value": "",
+      "category": ""
+    }}
   ]
 }}"""
 
-    system_msg = "You are an expert document analyst. Read the OCR text carefully. Respond ONLY with valid JSON containing classification and entities."
+    system_msg = "You are an expert enterprise document analyst. Read the OCR text carefully. Respond ONLY with valid JSON strictly matching the requested schema."
     
     def _is_valid(data):
-        return isinstance(data, dict) and "classification" in data and "entities" in data
+        return isinstance(data, dict) and "classification" in data and "entities" in data and "document_metadata" in data
 
     race_result = _race_models(prompt, system_msg, api_key, _is_valid, EXTRACTION_MODELS, file_bytes, mime_type)
     
@@ -557,7 +613,8 @@ Return ONLY a valid JSON object in this exact format (no markdown, no explanatio
         logger.error("Unified analysis race failed completely.")
         return {
             "classification": {"class": "unknown", "confidence": 0.0, "source": "openrouter_error"},
-            "entities": []
+            "entities": [],
+            "structured_data": {}
         }
 
     data = race_result["data"]
@@ -565,7 +622,7 @@ Return ONLY a valid JSON object in this exact format (no markdown, no explanatio
     
     # Parse Classification
     clf_data = data.get("classification", {})
-    doc_class = str(clf_data.get("class", "unknown")).lower().replace(" ", "_")
+    doc_class = str(clf_data.get("primary_category", "unknown")).lower().replace(" ", "_")
     if doc_class not in CLASS_NAMES:
         for name in CLASS_NAMES:
             if name in doc_class or doc_class in name:
@@ -576,24 +633,47 @@ Return ONLY a valid JSON object in this exact format (no markdown, no explanatio
             
     classification = {
         "class": doc_class,
-        "confidence": float(clf_data.get("confidence", 0.8)),
-        "reasoning": clf_data.get("reasoning", ""),
+        "confidence": 0.95, # Mock confidence for now
+        "reasoning": str(clf_data.get("tags", [])),
         "source": f"openrouter_race ({best_model})"
     }
     
-    # Parse Entities
-    raw_entities = data.get("entities", [])
-    entities = []
-    if isinstance(raw_entities, list):
-        for item in raw_entities:
-            if not isinstance(item, dict): continue
-            etype = str(item.get("type", "unknown")).lower().strip()
-            val = str(item.get("value", "")).strip()
-            econf = max(0.0, min(1.0, float(item.get("confidence", 0.85))))
-            if val:
-                entities.append({"type": etype, "value": val, "confidence": round(econf, 4)})
+    # Parse Entities for legacy frontend chips compatibility
+    legacy_entities = []
+    entities_dict = data.get("entities", {})
+    
+    mapping = {
+        "organizations": "company",
+        "dates": "date",
+        "addresses": "address",
+        "amounts": "total",
+        "people": "name",
+        "phone_numbers": "phone",
+        "emails": "email"
+    }
+    
+    if isinstance(entities_dict, dict):
+        for k, v in entities_dict.items():
+            mapped_type = mapping.get(k, k)
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str) and item:
+                        legacy_entities.append({"type": mapped_type, "value": item, "confidence": 0.95})
+                    elif isinstance(item, dict) and "value" in item:
+                        legacy_entities.append({"type": mapped_type, "value": str(item["value"]), "confidence": 0.95})
+
+    # The rest goes into structured_data
+    structured_data = {
+        "document_metadata": data.get("document_metadata", {}),
+        "document_structure": data.get("document_structure", {}),
+        "financial_information": data.get("financial_information", {}),
+        "summary": data.get("summary", {}),
+        "risk_analysis": data.get("risk_analysis", {}),
+        "csv_export_data": data.get("csv_export_data", [])
+    }
 
     return {
         "classification": classification,
-        "entities": entities
+        "entities": legacy_entities,
+        "structured_data": structured_data
     }

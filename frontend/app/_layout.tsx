@@ -8,6 +8,14 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { requestNotificationPermissions } from '../utils/notifications';
 import { LogBox } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts, Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold, Outfit_800ExtraBold } from '@expo-google-fonts/outfit';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { OfflineBanner } from '../components/OfflineBanner';
+import { CustomAlert } from '../components/CustomAlert';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 // Ignore the Expo Go push notification warning since we only need local notifications
 LogBox.ignoreLogs([
@@ -50,16 +58,38 @@ function StackLayout() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Outfit_400Regular,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+    Outfit_800ExtraBold,
+  });
+
   useEffect(() => {
     requestNotificationPermissions();
   }, []);
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={DarkTheme}>
         <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
-          <StackLayout />
+          <ErrorBoundary>
+            <StatusBar style="light" />
+            <OfflineBanner />
+            <StackLayout />
+            <CustomAlert />
+          </ErrorBoundary>
         </QueryClientProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

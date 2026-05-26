@@ -12,5 +12,8 @@ router.post('/change-password', requireAuth, authController.changePassword);
 router.get('/test', (req, res) => res.json({ message: 'Auth routes are working' }));
 router.get('/me', requireAuth, authController.getMe);
 router.patch('/me', requireAuth, authController.updateMe);
+router.delete('/me', requireAuth, authController.deleteAccount);
+router.post('/forgot-vault-pin', requireAuth, authController.forgotVaultPin);
+router.post('/verify-vault-pin', requireAuth, authController.verifyVaultPin);
 
 module.exports = router;

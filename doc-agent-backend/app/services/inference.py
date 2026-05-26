@@ -45,8 +45,7 @@ def _get_openrouter_key() -> str:
     except Exception: return ""
 
 def _use_gemini() -> bool:
-    # Gemini disabled per user request
-    return False
+    return bool(_get_gemini_key())
 
 def _use_openrouter() -> bool:
     return bool(_get_openrouter_key())
@@ -135,7 +134,7 @@ def classify_document(
         try:
             from app.services.gemini_inference import classify_document_gemini
             result = classify_document_gemini(
-                file_bytes, ocr_text, mime_type, _get_gemini_key()
+                ocr_text, _get_gemini_key(), file_bytes, mime_type
             )
             return _apply_validation_layer(result)
         except Exception as exc:
@@ -203,7 +202,7 @@ def extract_entities(
         try:
             from app.services.gemini_inference import extract_entities_gemini
             return extract_entities_gemini(
-                file_bytes, ocr_text, mime_type, _get_gemini_key()
+                ocr_text, _get_gemini_key(), file_bytes, mime_type
             )
         except Exception as exc:
             logger.error("Gemini entity extraction failed, trying local: %s", exc)
@@ -308,7 +307,7 @@ def answer_question(
         try:
             from app.services.gemini_inference import answer_question_gemini
             result = answer_question_gemini(
-                file_bytes, ocr_text, question, mime_type, _get_gemini_key()
+                ocr_text, question, _get_gemini_key(), file_bytes=file_bytes, mime_type=mime_type
             )
             return _apply_validation_layer(result)
         except Exception as exc:
@@ -389,7 +388,7 @@ def analyze_document(
     if _use_gemini():
         try:
             from app.services.gemini_inference import analyze_document_gemini
-            result = analyze_document_gemini(file_bytes, ocr_text, mime_type, _get_gemini_key())
+            result = analyze_document_gemini(ocr_text, _get_gemini_key(), file_bytes, mime_type)
             result["classification"] = _apply_validation_layer(result.get("classification", {}))
             return result
         except Exception as exc:
@@ -400,7 +399,8 @@ def analyze_document(
     entities = extract_entities(file_bytes, ocr_text, mime_type)
     return {
         "classification": classification,
-        "entities": entities
+        "entities": entities,
+        "structured_data": {}
     }
 
 
@@ -426,6 +426,7 @@ def run_inference(
     analysis = analyze_document(file_bytes, ocr_text, mime_type)
     classification = analysis.get("classification", {})
     entities = analysis.get("entities", [])
+    structured_data = analysis.get("structured_data", {})
 
     processing_time_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -434,6 +435,7 @@ def run_inference(
         "confidence": classification.get("confidence", 0.0),
         "classification": classification,
         "entities": entities,
+        "structured_data": structured_data,
         "raw_text": ocr_text,
         "processing_time_ms": processing_time_ms,
         "inference_backend": backend,

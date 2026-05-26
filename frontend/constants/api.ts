@@ -83,11 +83,20 @@ export async function getApiUrl(): Promise<string> {
     ? Array.from(new Set([saved, lanCandidate, ...API_URL_CANDIDATES].filter(Boolean) as string[]))
     : API_URL_CANDIDATES;
 
-  for (const candidate of candidates) {
-    if (await isReachable(candidate)) {
-      await AsyncStorage.setItem('api_url', candidate);
-      return candidate;
-    }
+  // Race all candidates in parallel — first reachable one wins
+  try {
+    const winner = await Promise.race(
+      candidates.map(url =>
+        isReachable(url).then(ok => {
+          if (ok) return url;
+          return new Promise<never>(() => {}); // never resolves if not reachable
+        })
+      )
+    );
+    await AsyncStorage.setItem('api_url', winner);
+    return winner;
+  } catch {
+    // All failed
   }
 
   return DEFAULT_API_URL.replace(/\/+$/, '');

@@ -1,47 +1,52 @@
-const sendEmail = async (to, subject, text, html) => {
-  const apiKey = process.env.BREVO_API_KEY;
-  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'adityapal48354@gmail.com';
+const nodemailer = require('nodemailer');
 
-  if (!apiKey) {
-    console.error('❌ BREVO_API_KEY is not defined in environment variables!');
+// Create a reusable SMTP transporter from .env credentials
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  secure: false, // true for port 465, false for 587 (STARTTLS)
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+// Verify transporter on startup (non-fatal if it fails at boot time)
+transporter.verify((error) => {
+  if (error) {
+    console.error('❌ SMTP transporter verification failed:', error.message);
+  } else {
+    console.log('✅ SMTP transporter ready — connected to', process.env.SMTP_HOST);
+  }
+});
+
+/**
+ * Send an email via SMTP.
+ * Signature is identical to the old Brevo version so authController.js needs no changes.
+ * @param {string} to      - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} text    - Plain-text fallback
+ * @param {string} html    - HTML body
+ */
+const sendEmail = async (to, subject, text, html) => {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('❌ SMTP_USER or SMTP_PASS is not defined in environment variables!');
     return null;
   }
 
   try {
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'api-key': apiKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        sender: {
-          name: 'DocAgent',
-          email: senderEmail,
-        },
-        to: [
-          {
-            email: to,
-          },
-        ],
-        subject: subject,
-        textContent: text,
-        htmlContent: html,
-      }),
+    const info = await transporter.sendMail({
+      from: `"DocAgent" <${process.env.SMTP_USER}>`,
+      to,
+      subject,
+      text,
+      html,
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to send email via Brevo API');
-    }
-
-    console.log('📬 Email successfully sent via Brevo API! Message ID:', data.messageId);
-    return data;
+    console.log('📬 Email sent via SMTP! Message ID:', info.messageId);
+    return info;
   } catch (error) {
-    console.error('⚠️ Brevo Email sending failed ⚠️');
-    console.error('Error Details:', error.message);
+    console.error('⚠️ SMTP email sending failed:', error.message);
     return null;
   }
 };

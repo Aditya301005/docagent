@@ -30,3 +30,4 @@ app.use((req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Node Auth Backend running on 0.0.0.0:${PORT}`);
 });
+// Trigger restart

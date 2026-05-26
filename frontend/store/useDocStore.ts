@@ -7,7 +7,7 @@ interface DocStore {
   documents: Document[];
   currentUserKey: string;
   setCurrentUserKey: (userKey: string) => void;
-  getVisibleDocuments: () => Document[];
+  getVisibleDocuments: (includeLocked?: boolean) => Document[];
   addDocument: (doc: Document) => void;
   updateDocument: (id: string, updates: Partial<Document>) => void;
   removeDocument: (id: string) => void;
@@ -103,7 +103,7 @@ export const useDocStore = create<DocStore>()(
         const currentUserKey = normalizeUserKey(get().currentUserKey);
         return get().folders.filter((f) => normalizeUserKey(f.ownerKey) === currentUserKey);
       },
-      addFolder: (name, color = '#6366F1') =>
+      addFolder: (name, color = '#00C896') =>
         set((state) => ({
           folders: [
             {

@@ -1,39 +1,26 @@
 """
 gemini_inference.py
---------------------
-Inference backend powered by Google Gemini API (gemini-2.5-flash).
+-----------------------
+Inference backend powered by Google Gemini (gemini-2.5-flash).
 
-Uses the new `google-genai` SDK (replaces the deprecated `google-generativeai`).
-
-Replaces the local ONNX / LayoutLMv3 models for:
-  • Document classification
-  • Named-entity extraction
-  • Question answering (VQA)
-
-The API is called with both the raw image (base64) AND the OCR text so
-Gemini can cross-reference visual layout with extracted text for higher
-accuracy.
-
-All public functions return the same dict/list shapes as the old ONNX
-functions so the rest of the codebase requires no changes.
+Replaces OpenRouter to process text and multimodal images.
 """
 
 from __future__ import annotations
-
 import base64
-import io
 import json
+import json_repair
 import logging
 import re
-import time
+import httpx
 from typing import Any
-
-from google import genai
-from google.genai import types as genai_types
 
 logger = logging.getLogger(__name__)
 
-# ── Supported document classes (same list as the old classifier) ────────────
+# Base Gemini URL pattern
+GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+MODEL_NAME = "gemini-2.5-flash"
+
 CLASS_NAMES = [
     "letter", "memo", "email", "filefolder", "form", "handwritten",
     "invoice", "advertisement", "budget", "news", "presentation",
@@ -41,407 +28,381 @@ CLASS_NAMES = [
     "scientific_report", "specification",
 ]
 
-# ── Gemini model to use ─────────────────────────────────────────────────────
-GEMINI_MODEL = "gemini-2.5-flash"
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _init_client(api_key: str) -> genai.Client:
-    """Configure the SDK and return a client instance."""
-    return genai.Client(api_key=api_key)
-
-def _generate_with_retry(client: genai.Client, model: str, contents: list, max_retries: int = 3, initial_backoff: float = 2.0):
-    """Call Gemini API with exponential backoff for 503 and 429 errors."""
-    last_exc = None
-    for attempt in range(max_retries):
-        try:
-            return client.models.generate_content(model=model, contents=contents)
-        except Exception as exc:
-            last_exc = exc
-            err_str = str(exc)
-            if "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "ResourceExhausted" in err_str:
-                sleep_time = initial_backoff * (2 ** attempt)
-                logger.warning(f"Gemini API busy (attempt {attempt+1}/{max_retries}). Retrying in {sleep_time}s... Error: {err_str}")
-                time.sleep(sleep_time)
-            else:
-                raise exc
-    raise last_exc
-
-
-def _get_content_parts(file_bytes: bytes, mime_type: str) -> list:
-    """
-    Convert a file to a list of Gemini inline-data image parts.
-    - For PDFs: every page is rendered and returned as a separate JPEG part.
-    - For images: returns a single part.
-    """
-    parts = []
-
-    if mime_type == "application/pdf":
-        try:
-            import fitz  # PyMuPDF
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            mat = fitz.Matrix(150 / 72, 150 / 72)
-            for page_num in range(len(doc)):
-                pix = doc[page_num].get_pixmap(matrix=mat)
-                jpeg_bytes = pix.tobytes("jpeg")
-                parts.append(
-                    genai_types.Part.from_bytes(data=jpeg_bytes, mime_type="image/jpeg")
-                )
-            logger.info("PDF split into %d page image(s) for Gemini.", len(parts))
-        except Exception as exc:
-            logger.warning("PDF→images conversion failed: %s — sending raw bytes.", exc)
-            parts.append(
-                genai_types.Part.from_bytes(data=file_bytes, mime_type="application/pdf")
-            )
-    else:
-        parts.append(
-            genai_types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-        )
-
-    return parts
-
-
 def _parse_json_from_response(text: str) -> Any:
-    """
-    Extract the first JSON object/array from a Gemini response string.
-    Gemini sometimes wraps JSON in markdown fences — this strips them.
-    """
+    """Extract JSON from LLM response, handling markdown fences and broken JSON using json_repair."""
     text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
-
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        pass
+        
+    try:
+        return json_repair.loads(text)
+    except Exception:
         pass
 
     match = re.search(r"(\{[\s\S]+\}|\[[\s\S]+\])", text)
     if match:
         try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
+            return json_repair.loads(match.group(1))
+        except Exception:
             pass
-
+            
     raise ValueError(f"Could not parse JSON from Gemini response: {text[:300]}")
 
+def _call_gemini_generic(
+    prompt: str,
+    system_message: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Call Google Gemini (text or vision) and return parsed JSON."""
+    try:
+        parts = []
+        if file_bytes:
+            if mime_type == "application/pdf":
+                # Convert PDF first page to image for Gemini vision fallback
+                try:
+                    import fitz
+                    doc = fitz.open(stream=file_bytes, filetype="pdf")
+                    mat = fitz.Matrix(120 / 72, 120 / 72)
+                    for idx in range(min(3, len(doc))):
+                        pix = doc[idx].get_pixmap(matrix=mat)
+                        b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
+                        parts.append({
+                            "inlineData": {
+                                "mimeType": "image/jpeg",
+                                "data": b64
+                            }
+                        })
+                except Exception as exc:
+                    logger.warning("PDF vision render failed in gemini_inference: %s", exc)
+            else:
+                try:
+                    b64 = base64.b64encode(file_bytes).decode("utf-8")
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": b64
+                        }
+                    })
+                except Exception as exc:
+                    logger.warning("Image base64 encoding failed: %s", exc)
 
-# ---------------------------------------------------------------------------
-# Public inference functions
-# ---------------------------------------------------------------------------
+        parts.append({"text": prompt})
+
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": system_message}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": parts
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 8192,
+            }
+        }
+
+        url = GEMINI_URL_TEMPLATE.format(model=MODEL_NAME, key=api_key)
+
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client() as client:
+                    response = client.post(url, json=payload, timeout=120.0)
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    if "candidates" not in data or not data["candidates"]:
+                        raise ValueError("Model returned empty candidates")
+                        
+                    raw_content = data["candidates"][0]["content"]["parts"][0]["text"]
+                    if not raw_content:
+                        raise ValueError("Model returned empty text")
+                        
+                parsed_data = _parse_json_from_response(raw_content)
+                return {"data": parsed_data, "model": MODEL_NAME}
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < max_retries - 1:
+                    logger.warning(f"Rate limited (429). Retrying in {2 ** attempt} seconds...")
+                    time.sleep(5)
+                    continue
+                raise
+        
+    except Exception as exc:
+        logger.warning("Gemini failed: %s", exc)
+        return {"error": str(exc), "model": MODEL_NAME}
 
 def classify_document_gemini(
-    file_bytes: bytes,
     ocr_text: str,
-    mime_type: str,
     api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
 ) -> dict:
-    """
-    Classify a document using Gemini multimodal.
-
-    Returns:
-        {
-            "class": str,          # one of CLASS_NAMES
-            "confidence": float,   # 0.0 – 1.0
-            "all_scores": dict,    # label → score (optional, best-effort)
-            "source": "gemini"
-        }
-    """
-    client = _init_client(api_key)
-    image_parts = _get_content_parts(file_bytes, mime_type)
-
+    """Classify document based on OCR text or image using Gemini."""
     class_list = ", ".join(CLASS_NAMES)
-    ocr_snippet = (ocr_text or "")
-
-    prompt = f"""You are an expert document classifier.
-
-Analyze ALL the document page images provided and the OCR text below, then classify the document
-into EXACTLY ONE of the following categories:
+    prompt = f"""Analyze the following document (OCR text and/or page images provided) and classify it into EXACTLY ONE of these categories:
 {class_list}
 
-OCR text (from all pages):
+OCR Text (if available):
 \"\"\"
-{ocr_snippet}
+{ocr_text[:4000]}
 \"\"\"
 
-Respond with ONLY valid JSON in this exact format (no extra text):
+Return ONLY a JSON object:
 {{
   "class": "<category_name>",
-  "confidence": <float between 0.0 and 1.0>,
-  "reasoning": "<one sentence explanation>"
+  "confidence": <float 0.0-1.0>,
+  "reasoning": "<brief explanation>"
 }}"""
 
-    try:
-        contents = [*image_parts, prompt]
-        response = _generate_with_retry(client, GEMINI_MODEL, contents)
-        data = _parse_json_from_response(response.text)
-
-        doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
-        if doc_class not in CLASS_NAMES:
-            for name in CLASS_NAMES:
-                if name in doc_class or doc_class in name:
-                    doc_class = name
-                    break
-            else:
-                doc_class = "unknown"
-
-        confidence = float(data.get("confidence", 0.85))
-        confidence = max(0.0, min(1.0, confidence))
-
-        return {
-            "class": doc_class,
-            "confidence": round(confidence, 4),
-            "reasoning": data.get("reasoning", ""),
-            "source": "gemini",
-        }
-
-    except Exception as exc:
-        logger.error("Gemini classification failed: %s", exc)
+    system_msg = "You are an expert document classifier. Respond ONLY with valid JSON."
+    
+    res = _call_gemini_generic(prompt, system_msg, api_key, file_bytes, mime_type)
+    
+    if "data" not in res or not isinstance(res["data"], dict) or "class" not in res["data"]:
+        logger.error("Classification failed completely.")
         return {"class": "unknown", "confidence": 0.0, "source": "gemini_error"}
 
+    data = res["data"]
+    doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
+    
+    if doc_class not in CLASS_NAMES:
+        for name in CLASS_NAMES:
+            if name in doc_class or doc_class in name:
+                doc_class = name
+                break
+        else:
+            doc_class = "unknown"
+
+    return {
+        "class": doc_class,
+        "confidence": float(data.get("confidence", 0.8)),
+        "reasoning": data.get("reasoning", ""),
+        "source": f"gemini ({res.get('model')})"
+    }
 
 def extract_entities_gemini(
-    file_bytes: bytes,
     ocr_text: str,
-    mime_type: str,
     api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
 ) -> list[dict]:
-    """
-    Extract named entities from a document using Gemini multimodal.
+    """Extract entities from OCR text or image using Gemini."""
+    prompt = f"""Extract important information from the following document (OCR text and/or page images provided).
+Target types: date, total, company, address, phone, email, invoice_number, tax, name.
 
-    Returns a list of:
-        {"type": str, "value": str, "confidence": float}
-    """
-    client = _init_client(api_key)
-    image_parts = _get_content_parts(file_bytes, mime_type)
-
-    ocr_snippet = (ocr_text or "")
-
-    prompt = f"""You are an expert document information extractor.
-
-Analyze ALL document page images and OCR text below. Extract ALL important named
-entities and key-value pairs present anywhere in the document (all pages).
-
-OCR text (from all pages):
+OCR Text (if available):
 \"\"\"
-{ocr_snippet}
+{ocr_text[:4000]}
 \"\"\"
 
-Extract entities of these types (use only what is present):
-  - date          (any dates: invoice date, due date, delivery date, etc.)
-  - total         (monetary totals, subtotals, grand totals, amounts)
-  - company       (company names, vendor names, client names)
-  - address       (full or partial addresses)
-  - phone         (phone numbers, fax numbers)
-  - email         (email addresses)
-  - invoice_number (invoice #, PO #, order #, reference #)
-  - tax           (tax amounts, VAT, GST)
-  - name          (person names, signatories)
-  - line_item     (individual line items with quantity/price)
-  - reference     (any other important reference numbers or codes)
-
-Respond with ONLY a valid JSON array (no extra text):
+Return ONLY a JSON array of objects:
 [
-  {{"type": "<entity_type>", "value": "<extracted_value>", "confidence": <0.0-1.0>}},
-  ...
-]
-
-If no entities are found, return an empty array: []"""
-
-    try:
-        contents = [*image_parts, prompt]
-        response = _generate_with_retry(client, GEMINI_MODEL, contents)
-        data = _parse_json_from_response(response.text)
-
-        if not isinstance(data, list):
-            logger.warning("Gemini NER returned non-list: %s", type(data))
-            return []
-
-        entities = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            entity_type = str(item.get("type", "unknown")).lower().strip()
-            value = str(item.get("value", "")).strip()
-            confidence = float(item.get("confidence", 0.85))
-            confidence = max(0.0, min(1.0, confidence))
-
-            if value:
-                entities.append({
-                    "type": entity_type,
-                    "value": value,
-                    "confidence": round(confidence, 4),
-                })
-
-        return entities
-
-    except Exception as exc:
-        logger.error("Gemini entity extraction failed: %s", exc)
+  {{
+    "type": "<type_from_target_list>",
+    "value": "<extracted_string>",
+    "confidence": <float 0.0-1.0>
+  }}
+]"""
+    system_msg = "You are an expert data extractor. Respond ONLY with a valid JSON array."
+    
+    res = _call_gemini_generic(prompt, system_msg, api_key, file_bytes, mime_type)
+    
+    if "data" not in res or not isinstance(res["data"], list):
+        logger.error("Entity extraction failed.")
         return []
-
-
-def answer_question_gemini(
-    file_bytes: bytes,
-    ocr_text: str,
-    question: str,
-    mime_type: str,
-    api_key: str,
-) -> dict:
-    """
-    Answer a question about a document using Gemini multimodal.
-
-    Returns:
-        {"answer": str, "confidence": float, "source": "gemini"}
-    """
-    client = _init_client(api_key)
-
-    # ── Build content parts ──────────────────────────────────────────────────
-    if mime_type == "application/pdf":
-        doc_part = genai_types.Part.from_bytes(data=file_bytes, mime_type="application/pdf")
-        content_parts = [doc_part]
-        context_note = "The full PDF document has been provided above."
-    else:
-        doc_part = genai_types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-        content_parts = [doc_part]
-        context_note = "The document image has been provided above."
-
-    ocr_context = ""
-    if ocr_text and ocr_text.strip():
-        ocr_snippet = ocr_text[:15000]
-        ocr_context = f"""
-Supplementary OCR text (use this alongside the document above):
-\"\"\"
-{ocr_snippet}
-\"\"\""""
-
-    prompt = f"""You are an expert document analyst and question-answering system.
-
-{context_note}
-{ocr_context}
-
-INSTRUCTIONS:
-- Read the ENTIRE document carefully, including all pages from beginning to end.
-- Answer the question based on information found ANYWHERE in the document.
-- Do NOT give up if information seems to be on a later page — read all pages.
-- For section-based questions (References, Conclusion, Introduction, etc.), locate that section and extract its content.
-- If OCR text is imperfect, use the visual document to cross-reference.
-- Provide complete, thorough answers. Do not truncate lists or sections.
-- Only say information is absent if it genuinely does not exist in the document.
-
-Question: {question}
-
-Respond with ONLY valid JSON (no extra text):
-{{
-  "answer": "<complete, thorough answer drawn from the document>",
-  "confidence": <float 0.0-1.0>,
-  "found_in_document": <true or false>
-}}
-
-If the information is truly absent from the entire document, set answer to "" and found_in_document to false."""
-
-    try:
-        contents = [*content_parts, prompt]
-        response = _generate_with_retry(client, GEMINI_MODEL, contents)
-        data = _parse_json_from_response(response.text)
-
-        answer = str(data.get("answer", "")).strip()
-        confidence = float(data.get("confidence", 0.0))
-        confidence = max(0.0, min(1.0, confidence))
-
-        return {
-            "answer": answer,
-            "confidence": round(confidence, 4),
-            "found_in_document": bool(data.get("found_in_document", bool(answer))),
-            "source": "gemini",
-        }
-
-    except Exception as exc:
-        logger.error("Gemini Q&A failed: %s", exc)
-        return {"answer": "", "confidence": 0.0, "source": "gemini_error"}
+        
+    return res["data"]
 
 def analyze_document_gemini(
-    file_bytes: bytes,
     ocr_text: str,
-    mime_type: str,
     api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
 ) -> dict:
-    """
-    Unified function to classify and extract entities in ONE pass.
-    """
-    client = _init_client(api_key)
-    image_parts = _get_content_parts(file_bytes, mime_type)
+    """Classify and extract rich structured enterprise entities in ONE pass using Gemini."""
     class_list = ", ".join(CLASS_NAMES)
-    ocr_snippet = (ocr_text or "")
-
-    prompt = f"""You are an expert document analyst.
-
-Analyze ALL document page images and OCR text below. You have TWO tasks:
+    prompt = f"""Analyze the following document (OCR text provided). You must act as an enterprise-grade document intelligence system.
+    
 1) Classify the document into EXACTLY ONE of these categories: {class_list}
-2) Extract ALL important named entities and key-value pairs (date, total, company, address, phone, email, invoice_number, tax, name, line_item, reference).
+2) Extract highly detailed structured entities, document structure, financial data, risk analysis, and normalized CSV data.
 
-OCR text (from all pages):
+OCR Text:
 \"\"\"
-{ocr_snippet}
+{ocr_text[:30000]}
 \"\"\"
 
-Respond with ONLY valid JSON in this exact format (no extra text):
+Return ONLY a valid JSON object matching this exact schema (no markdown, no explanation):
 {{
-  "classification": {{
-    "class": "<category_name>",
-    "confidence": <float 0.0-1.0>,
-    "reasoning": "<brief explanation>"
+  "document_metadata": {{
+    "document_type": "",
+    "title": "",
+    "language": "",
+    "page_count": "",
+    "processing_timestamp": "",
+    "confidence_score": ""
   }},
-  "entities": [
-    {{"type": "<type>", "value": "<extracted_value>", "confidence": <0.0-1.0>}}
+  "classification": {{
+    "primary_category": "<category_from_list>",
+    "secondary_category": "",
+    "tags": []
+  }},
+  "entities": {{
+    "people": [],
+    "organizations": [],
+    "emails": [],
+    "phone_numbers": [],
+    "addresses": [],
+    "dates": [],
+    "currencies": [],
+    "amounts": [],
+    "invoice_numbers": [],
+    "contract_ids": []
+  }},
+  "document_structure": {{
+    "headings": [],
+    "sections": [],
+    "tables": [],
+    "line_items": []
+  }},
+  "financial_information": {{
+    "subtotal": "",
+    "tax": "",
+    "total_amount": "",
+    "payment_terms": "",
+    "currency": ""
+  }},
+  "summary": {{
+    "short_summary": "",
+    "detailed_summary": "",
+    "key_points": []
+  }},
+  "risk_analysis": {{
+    "important_clauses": [],
+    "missing_information": [],
+    "potential_risks": []
+  }},
+  "csv_export_data": [
+    {{
+      "field": "",
+      "value": "",
+      "category": ""
+    }}
   ]
 }}"""
 
-    try:
-        contents = [*image_parts, prompt]
-        response = _generate_with_retry(client, GEMINI_MODEL, contents)
-        data = _parse_json_from_response(response.text)
-
-        # Parse Classification
-        clf_data = data.get("classification", {})
-        doc_class = str(clf_data.get("class", "unknown")).lower().replace(" ", "_")
-        if doc_class not in CLASS_NAMES:
-            for name in CLASS_NAMES:
-                if name in doc_class or doc_class in name:
-                    doc_class = name
-                    break
-            else:
-                doc_class = "unknown"
-                
-        confidence = float(clf_data.get("confidence", 0.85))
-        
-        classification = {
-            "class": doc_class,
-            "confidence": max(0.0, min(1.0, confidence)),
-            "reasoning": clf_data.get("reasoning", ""),
-            "source": "gemini",
-        }
-
-        # Parse Entities
-        raw_entities = data.get("entities", [])
-        entities = []
-        if isinstance(raw_entities, list):
-            for item in raw_entities:
-                if not isinstance(item, dict): continue
-                etype = str(item.get("type", "unknown")).lower().strip()
-                val = str(item.get("value", "")).strip()
-                econf = max(0.0, min(1.0, float(item.get("confidence", 0.85))))
-                if val:
-                    entities.append({"type": etype, "value": val, "confidence": round(econf, 4)})
-
-        return {
-            "classification": classification,
-            "entities": entities
-        }
-
-    except Exception as exc:
-        logger.error("Gemini combined analysis failed: %s", exc)
+    system_msg = "You are an expert enterprise document analyst. Read the OCR text carefully. Respond ONLY with valid JSON strictly matching the requested schema."
+    
+    res = _call_gemini_generic(prompt, system_msg, api_key, file_bytes, mime_type)
+    
+    if "data" not in res or not isinstance(res["data"], dict):
+        logger.error("Unified analysis failed completely.")
         return {
             "classification": {"class": "unknown", "confidence": 0.0, "source": "gemini_error"},
-            "entities": []
+            "entities": [],
+            "structured_data": {}
         }
 
+    data = res["data"]
+    best_model = res.get("model", "unknown")
+    
+    # Parse Classification
+    clf_data = data.get("classification", {})
+    doc_class = str(clf_data.get("primary_category", "unknown")).lower().replace(" ", "_")
+    if doc_class not in CLASS_NAMES:
+        for name in CLASS_NAMES:
+            if name in doc_class or doc_class in name:
+                doc_class = name
+                break
+        else:
+            doc_class = "unknown"
+            
+    classification = {
+        "class": doc_class,
+        "confidence": 0.95, # Mock confidence for now
+        "reasoning": str(clf_data.get("tags", [])),
+        "source": f"gemini_unified ({best_model})"
+    }
+    
+    # Parse Entities for legacy frontend chips compatibility
+    legacy_entities = []
+    entities_dict = data.get("entities", {})
+    
+    mapping = {
+        "organizations": "company",
+        "dates": "date",
+        "addresses": "address",
+        "amounts": "total",
+        "people": "name",
+        "phone_numbers": "phone",
+        "emails": "email"
+    }
+    
+    if isinstance(entities_dict, dict):
+        for k, v in entities_dict.items():
+            mapped_type = mapping.get(k, k)
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str) and item:
+                        legacy_entities.append({"type": mapped_type, "value": item, "confidence": 0.95})
+                    elif isinstance(item, dict) and "value" in item:
+                        legacy_entities.append({"type": mapped_type, "value": str(item["value"]), "confidence": 0.95})
+
+    # The rest goes into structured_data
+    structured_data = {
+        "document_metadata": data.get("document_metadata", {}),
+        "document_structure": data.get("document_structure", {}),
+        "financial_information": data.get("financial_information", {}),
+        "summary": data.get("summary", {}),
+        "risk_analysis": data.get("risk_analysis", {}),
+        "csv_export_data": data.get("csv_export_data", [])
+    }
+
+    return {
+        "classification": classification,
+        "entities": legacy_entities,
+        "structured_data": structured_data
+    }
+
+def answer_question_gemini(
+    ocr_text: str,
+    question: str,
+    api_key: str,
+    file_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    """Answer a user question based on the document."""
+    prompt = f"""Answer the user's question based strictly on the provided document (OCR text and/or images).
+If the answer is not contained in the document, say so.
+
+User Question: {question}
+
+OCR Text:
+\"\"\"
+{ocr_text[:4000]}
+\"\"\"
+
+Return ONLY a JSON object:
+{{
+  "answer": "<your concise answer>",
+  "confidence": <float 0.0-1.0>,
+  "source_quote": "<optional quote from text supporting answer>"
+}}"""
+    system_msg = "You are an expert document QA assistant. Respond ONLY with valid JSON."
+    
+    res = _call_gemini_generic(prompt, system_msg, api_key, file_bytes, mime_type)
+    
+    if "data" not in res or not isinstance(res["data"], dict) or "answer" not in res["data"]:
+        logger.error("QA failed.")
+        return {"answer": "I could not analyze the document successfully.", "confidence": 0.0, "source_quote": None, "source": "gemini_error"}
+        
+    data = res["data"]
+    data["source"] = f"gemini ({res.get('model')})"
+    return data

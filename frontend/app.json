@@ -5,11 +5,11 @@
     "scheme": "docagent",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./icons/DocAgent_logo.png",
+    "icon": "./icons/main_app_logo.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./icons/DocAgent_logo.png",
+      "image": "./icons/main_app_logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f172a"
     },
@@ -22,7 +22,7 @@
       "versionCode": 1,
       "userInterfaceStyle": "dark",
       "adaptiveIcon": {
-        "foregroundImage": "./icons/DocAgent_logo.png",
+        "foregroundImage": "./icons/main_app_logo.png",
         "backgroundColor": "#0f172a"
       },
       "edgeToEdgeEnabled": true,
@@ -35,7 +35,7 @@
       ]
     },
     "web": {
-      "favicon": "./icons/DocAgent_logo.png"
+      "favicon": "./icons/main_app_logo.png"
     },
     "plugins": [
       "expo-secure-store",

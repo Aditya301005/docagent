@@ -1,5 +1,6 @@
 import React from 'react';
 import DocAgentHomeScreen from '../../components/DocAgentHomeScreen';
+import { SwipeableTabWrapper } from '../../components/SwipeableTabWrapper';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -12,5 +13,9 @@ export default function HomeTabIndexRoute() {
     });
   }, []);
 
-  return <DocAgentHomeScreen userName={name} />;
+  return (
+    <SwipeableTabWrapper rightRoute="/history">
+      <DocAgentHomeScreen userName={name} />
+    </SwipeableTabWrapper>
+  );
 }

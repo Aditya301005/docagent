@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import axios from 'axios';
 import { getAuthUrl } from '../constants/api';
 import Svg, { Path } from 'react-native-svg';
+import { showCustomAlert } from '../components/CustomAlert';
 
 const { width: W } = Dimensions.get('window');
 
@@ -22,7 +23,7 @@ export default function ForgotPasswordScreen() {
 
   const handleResetRequest = async () => {
     if (!email) {
-      Alert.alert('Missing Details', 'Please enter your email address.');
+      showCustomAlert('Missing Details', 'Please enter your email address.');
       return;
     }
 
@@ -35,12 +36,12 @@ export default function ForgotPasswordScreen() {
       });
 
       setSent(true);
-      Alert.alert('Code Sent', 'We have sent a 6-digit reset code to your email.', [
+      showCustomAlert('Code Sent', 'We have sent a 6-digit reset code to your email.', [
         { text: 'Enter Code', onPress: () => router.push({ pathname: '/reset-password', params: { email: email.trim().toLowerCase() } }) }
       ]);
     } catch (error: any) {
       const msg = error.response?.data?.detail || 'Failed to send reset link. Please try again.';
-      Alert.alert('Request Failed', msg);
+      showCustomAlert('Request Failed', msg);
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
 import { getAuthUrl } from '../constants/api';
 import Svg, { Path, Rect } from 'react-native-svg';
+import { showCustomAlert } from '../components/CustomAlert';
 
 const { width: W } = Dimensions.get('window');
 
@@ -30,17 +31,17 @@ export default function ResetPasswordScreen() {
 
   const handleReset = async () => {
     if (!password || !confirmPassword || !otp) {
-      Alert.alert('Missing Details', 'Please enter the code and new password.');
+      showCustomAlert('Missing Details', 'Please enter the code and new password.');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Mismatch', 'Passwords do not match.');
+      showCustomAlert('Mismatch', 'Passwords do not match.');
       return;
     }
 
     if (otp.length < 6) {
-      Alert.alert('Invalid Code', 'Please enter the 6-digit code from your email.');
+      showCustomAlert('Invalid Code', 'Please enter the 6-digit code from your email.');
       return;
     }
 
@@ -53,12 +54,12 @@ export default function ResetPasswordScreen() {
         newPassword: password,
       });
 
-      Alert.alert('Success', 'Your password has been reset successfully.', [
+      showCustomAlert('Success', 'Your password has been reset successfully.', [
         { text: 'Login', onPress: () => router.replace('/') }
       ]);
     } catch (error: any) {
       const msg = error.response?.data?.detail || 'Failed to reset password. The link might be expired.';
-      Alert.alert('Reset Failed', msg);
+      showCustomAlert('Reset Failed', msg);
     } finally {
       setLoading(false);
     }

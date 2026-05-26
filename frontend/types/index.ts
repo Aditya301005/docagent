@@ -10,6 +10,7 @@ export interface Document {
   imageUri: string;
   pages?: string[];        // for batch/multi-page scans
   entities?: Entity[];
+  structuredData?: any;
   rawText?: string;
   folderIds?: string[];
   tags?: string[];

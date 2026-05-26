@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,20 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
+  Animated,
 } from 'react-native';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
-import { useColorScheme } from 'nativewind';
+import { useLocalSearchParams, router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { notifyProcessing } from '../utils/notifications';
+import { Spacing, Radius } from '../constants/theme';
+import { useThemeStore } from '../store/useThemeStore';
+import { showCustomAlert } from '../components/CustomAlert';
 
 const { width: W, height: H } = Dimensions.get('window');
 const SCAN_W = 280;
@@ -27,14 +31,14 @@ const SCAN_H = 380;
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
-const BackIcon = () => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-    <Path d="M15 18l-6-6 6-6" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+const XIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+    <Path d="M18 6L6 18M6 6l12 12" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
 const FlipIcon = () => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
     <Path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z" stroke="#fff" strokeWidth={2} />
     <Circle cx={12} cy={13} r={3} stroke="#fff" strokeWidth={2} />
   </Svg>
@@ -43,33 +47,60 @@ const FlipIcon = () => (
 const FlashIcon = ({ mode }: { mode: 'on' | 'off' | 'auto' }) => {
   const color = mode === 'off' ? '#9CA3AF' : mode === 'auto' ? '#FCD34D' : '#FFF';
   return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill={mode === 'on' ? color : 'none'} />
     </Svg>
   );
 };
 
-const GalleryIcon = () => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-    <Rect x={3} y={3} width={18} height={18} rx={2} stroke="#fff" strokeWidth={2} />
-    <Circle cx={8.5} cy={8.5} r={1.5} fill="#fff" />
-    <Path d="M21 15l-5-5L5 21" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+const GalleryIcon = () => {
+  const { Colors } = useThemeStore();
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Rect x={3} y={3} width={18} height={18} rx={2} stroke={Colors.textPrimary} strokeWidth={2} />
+      <Circle cx={8.5} cy={8.5} r={1.5} fill={Colors.textPrimary} />
+      <Path d="M21 15l-5-5L5 21" stroke={Colors.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
+
+const FilesIcon = () => {
+  const { Colors } = useThemeStore();
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z" stroke={Colors.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 2v6h6" stroke={Colors.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M16 13H8M16 17H8" stroke={Colors.textPrimary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
+
+const ShutterIcon = () => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 3v18M3 12h18M12 12m-9 0a9 9 0 1 1 18 0 9 9 0 1 1-18 0" stroke="#000" strokeWidth={2.5} strokeLinecap="round" />
   </Svg>
 );
 
-const UploadBigIcon = () => (
-  <Svg width={56} height={56} viewBox="0 0 24 24" fill="none">
-    <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="#6366F1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M17 8l-5-5-5 5M12 3v12" stroke="#6366F1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
+const SparklesIcon = ({ color, size = 14 }: { color?: string, size?: number }) => {
+  const { Colors } = useThemeStore();
+  const activeColor = color || Colors.primary;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9.813 15.904L9 21L8.188 15.904L3 15L8.188 14.096L9 9L9.813 14.096L15 15L9.813 15.904Z" fill={activeColor} />
+      <Path d="M19.071 7.071L18.5 10.5L17.929 7.071L14.5 6.5L17.929 5.929L18.5 2.5L19.071 5.929L22.5 6.5L19.071 7.071Z" fill={activeColor} />
+    </Svg>
+  );
+};
 
-const BatchIcon = ({ active }: { active: boolean }) => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-    <Rect x={4} y={6} width={14} height={16} rx={2} stroke={active ? '#6366F1' : '#fff'} strokeWidth={2} fill={active ? 'rgba(99,102,241,0.25)' : 'none'} />
-    <Rect x={7} y={3} width={14} height={16} rx={2} stroke={active ? '#818CF8' : 'rgba(255,255,255,0.5)'} strokeWidth={2} fill="none" />
-  </Svg>
-);
+const BatchIcon = ({ active }: { active: boolean }) => {
+  const { Colors } = useThemeStore();
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Rect x={4} y={6} width={14} height={16} rx={2} stroke={active ? Colors.primary : '#fff'} strokeWidth={2} fill={active ? 'rgba(59,232,172,0.15)' : 'none'} />
+      <Rect x={7} y={3} width={14} height={16} rx={2} stroke={active ? Colors.secondary : 'rgba(255,255,255,0.5)'} strokeWidth={2} fill="none" />
+    </Svg>
+  );
+};
 
 const TrashSmallIcon = () => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -80,16 +111,63 @@ const TrashSmallIcon = () => (
 // ─── Scanner Screen ───────────────────────────────────────────────────────────
 
 export default function ScannerScreen() {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
+
   const { mode = 'camera' } = useLocalSearchParams<{ mode: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [flash, setFlash] = useState<'on' | 'off' | 'auto'>('auto');
   const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const cameraRef = useRef<CameraView>(null);
 
   // ── Batch scan state ─────────────────────────────────────────────────────────
   const [batchMode, setBatchMode] = useState(false);
   const [capturedPages, setCapturedPages] = useState<string[]>([]);
+
+  // ── Animated vertical scanline ───────────────────────────────────────────────
+  const scanLineY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (mode === 'camera') {
+      const runScanLine = () => {
+        scanLineY.setValue(0);
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(scanLineY, {
+              toValue: SCAN_H - 4,
+              duration: 2200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(scanLineY, {
+              toValue: 0,
+              duration: 2200,
+              useNativeDriver: true,
+            }),
+          ])
+        ).start();
+      };
+      runScanLine();
+    }
+  }, [mode]);
+
+  // ── Neural extraction progress increments ───────────────────────────────────
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (processing) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress((p) => {
+          if (p < 96) return p + 4;
+          return p;
+        });
+      }, 80);
+    } else {
+      setProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [processing]);
 
   const pushToResults = (params: {
     uri: string;
@@ -155,11 +233,12 @@ export default function ScannerScreen() {
         setProcessing(false);
       } else {
         await notifyProcessing('scan.jpg');
+        setProcessing(false);
         pushToResults({ uri, filename: 'scan.jpg', mimeType: 'image/jpeg' });
       }
     } catch (err) {
       console.error(err);
-      Alert.alert('Error', 'Failed to capture photo.');
+      showCustomAlert('Error', 'Failed to capture photo.');
       setProcessing(false);
     }
   };
@@ -167,9 +246,11 @@ export default function ScannerScreen() {
   const handleBatchDone = async () => {
     if (capturedPages.length === 0) return;
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setProcessing(true);
     const [firstPage] = capturedPages;
     const name = `batch_scan_${capturedPages.length}pages.jpg`;
     await notifyProcessing(name);
+    setProcessing(false);
     pushToResults({
       uri: firstPage,
       filename: name,
@@ -184,7 +265,7 @@ export default function ScannerScreen() {
 
   const toggleBatchMode = () => {
     if (batchMode && capturedPages.length > 0) {
-      Alert.alert(
+      showCustomAlert(
         'Exit Batch Mode?',
         'You have captured pages. Exiting will discard them.',
         [
@@ -221,7 +302,6 @@ export default function ScannerScreen() {
       if (!result.canceled && result.assets.length > 0) {
         setProcessing(true);
 
-        // Resize all selected images
         const resized = await Promise.all(
           result.assets.map((asset) =>
             ImageManipulator.manipulateAsync(
@@ -236,13 +316,13 @@ export default function ScannerScreen() {
         const firstName = result.assets[0].fileName || 'library-image.jpg';
 
         if (uris.length === 1) {
-          // Single photo — behave as before
           await notifyProcessing(firstName);
+          setProcessing(false);
           pushToResults({ uri: uris[0], filename: firstName, mimeType: 'image/jpeg' });
         } else {
-          // Multiple photos — treat as batch scan
           const batchName = `gallery_batch_${uris.length}pages.jpg`;
           await notifyProcessing(batchName);
+          setProcessing(false);
           pushToResults({
             uri: uris[0],
             filename: batchName,
@@ -250,9 +330,11 @@ export default function ScannerScreen() {
             pages: uris,
           });
         }
+      } else {
+        setProcessing(false);
       }
     } catch (err) {
-      Alert.alert('Error', 'Failed to pick image(s).');
+      showCustomAlert('Error', 'Failed to pick image(s).');
       setProcessing(false);
     }
   };
@@ -264,19 +346,20 @@ export default function ScannerScreen() {
         setProcessing(true);
         const filename = result.assets[0].name;
         await notifyProcessing(filename);
+        setProcessing(false);
         pushToResults({
           uri: result.assets[0].uri,
           filename,
           mimeType: result.assets[0].mimeType || undefined,
         });
+      } else {
+        setProcessing(false);
       }
     } catch (err) {
-      Alert.alert('Error', 'Failed to pick document.');
+      showCustomAlert('Error', 'Failed to pick document.');
       setProcessing(false);
     }
   };
-
-  // ── Camera Mode ─────────────────────────────────────────────────────────────
 
   if (mode === 'camera') {
     if (!permission) return <View style={s.blackFill} />;
@@ -313,6 +396,17 @@ export default function ScannerScreen() {
           <View style={s.overlayMiddle}>
             <View style={s.overlaySide} />
             <View style={s.scanWindow}>
+              {/* Animated green scan line */}
+              <Animated.View style={[s.scanLine, { transform: [{ translateY: scanLineY }] }]}>
+                <LinearGradient
+                  colors={['transparent', 'rgba(59,232,172,0.8)', 'transparent']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              </Animated.View>
+
+              {/* Glowing emerald corner frame markers */}
               <View style={[s.corner, s.cornerTL]} />
               <View style={[s.corner, s.cornerTR]} />
               <View style={[s.corner, s.cornerBL]} />
@@ -334,20 +428,21 @@ export default function ScannerScreen() {
           </Text>
         </View>
 
-        {/* Top bar */}
+        {/* Top bar (AI Capture) */}
         <View style={s.topBar}>
-          <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} activeOpacity={0.8}>
-            <BackIcon />
-          </TouchableOpacity>
+          <View>
+            <Text style={s.topHeaderSubtitle}>AI CAPTURE</Text>
+            {batchMode && (
+              <Text style={s.topHeaderBatch}>
+                Batch Scan • {capturedPages.length} page{capturedPages.length !== 1 ? 's' : ''}
+              </Text>
+            )}
+          </View>
 
-          <Text style={s.topTitle}>
-            {batchMode ? `Batch Scan  •  ${capturedPages.length} page${capturedPages.length !== 1 ? 's' : ''}` : 'Scan Document'}
-          </Text>
-
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={s.topActions}>
             {/* Batch mode toggle */}
             <TouchableOpacity
-              style={[s.iconBtn, batchMode && { backgroundColor: 'rgba(99,102,241,0.35)' }]}
+              style={[s.iconBtn, batchMode && { backgroundColor: 'rgba(59,232,172,0.2)', borderColor: 'rgba(59,232,172,0.4)' }]}
               onPress={toggleBatchMode}
               activeOpacity={0.8}
             >
@@ -356,6 +451,14 @@ export default function ScannerScreen() {
             {/* Flip camera */}
             <TouchableOpacity style={s.iconBtn} onPress={() => setFacing((f) => f === 'back' ? 'front' : 'back')} activeOpacity={0.8}>
               <FlipIcon />
+            </TouchableOpacity>
+            {/* Flash */}
+            <TouchableOpacity style={s.iconBtn} onPress={toggleFlash} activeOpacity={0.8}>
+              <FlashIcon mode={flash} />
+            </TouchableOpacity>
+            {/* Exit Close */}
+            <TouchableOpacity style={[s.iconBtn, s.exitBtn]} onPress={() => router.back()} activeOpacity={0.8}>
+              <XIcon />
             </TouchableOpacity>
           </View>
         </View>
@@ -366,16 +469,14 @@ export default function ScannerScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 12, gap: 10, alignItems: 'center' }}
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 10, alignItems: 'center' }}
             >
               {capturedPages.map((uri, index) => (
                 <View key={index} style={s.pageThumbnailWrap}>
                   <Image source={{ uri }} style={s.pageThumbnail} resizeMode="cover" />
-                  {/* Page number badge */}
                   <View style={s.pageBadge}>
                     <Text style={s.pageBadgeText}>{index + 1}</Text>
                   </View>
-                  {/* Remove button */}
                   <TouchableOpacity style={s.pageRemoveBtn} onPress={() => removePage(index)}>
                     <TrashSmallIcon />
                   </TouchableOpacity>
@@ -385,95 +486,144 @@ export default function ScannerScreen() {
           </View>
         )}
 
-        {/* Bottom bar — moves up when page strip is visible */}
-        <View style={[s.bottomBar, batchMode && capturedPages.length > 0 && { bottom: 110 }]}>
-          <TouchableOpacity style={s.iconBtn} onPress={() => switchMode('picker')} activeOpacity={0.8}>
-            <GalleryIcon />
+        {/* Bottom Actions Dock capsule (Gallery, Capture, Files) */}
+        <View style={[s.actionsDock, batchMode && capturedPages.length > 0 && { bottom: 120 }]}>
+          {/* Gallery Button */}
+          <TouchableOpacity style={s.dockActionBtn} onPress={pickImage} activeOpacity={0.8}>
+            <View style={s.dockIconCircle}>
+              <GalleryIcon />
+            </View>
+            <Text style={s.dockLabel}>Gallery</Text>
           </TouchableOpacity>
 
-          {/* Shutter */}
-          <TouchableOpacity style={s.shutter} onPress={handleCapture} activeOpacity={0.85}>
-            <View style={[s.shutterInner, batchMode && { backgroundColor: '#818CF8' }]} />
+          {/* Core Shutter / Capture Button */}
+          <TouchableOpacity style={s.dockActionBtn} onPress={handleCapture} activeOpacity={0.85}>
+            <LinearGradient
+              colors={Gradients.holo}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={s.shutterHolo}
+            >
+              <ShutterIcon />
+            </LinearGradient>
+            <Text style={[s.dockLabel, { color: Colors.primary, fontWeight: '700' }]}>Capture</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.iconBtn} onPress={toggleFlash} activeOpacity={0.8}>
-            <FlashIcon mode={flash} />
+          {/* Files Button */}
+          <TouchableOpacity style={s.dockActionBtn} onPress={pickDocument} activeOpacity={0.8}>
+            <View style={s.dockIconCircle}>
+              <FilesIcon />
+            </View>
+            <Text style={s.dockLabel}>Files</Text>
           </TouchableOpacity>
         </View>
 
-        {/* "Done" button — sits above the shutter row, never overlaps */}
+        {/* "Done" floating button for Batch processing */}
         {batchMode && capturedPages.length > 0 && (
           <TouchableOpacity style={s.batchDoneBtn} onPress={handleBatchDone} activeOpacity={0.85}>
-            <Text style={s.batchDoneBtnText}>✓  Done  ({capturedPages.length} page{capturedPages.length !== 1 ? 's' : ''})</Text>
+            <LinearGradient
+              colors={Gradients.holo}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={s.batchDoneGradient}
+            >
+              <Text style={s.batchDoneBtnText}>✓  Analyze  ({capturedPages.length} Pages)</Text>
+            </LinearGradient>
           </TouchableOpacity>
         )}
 
-        {/* Processing overlay */}
+        {/* Premium Neural extraction progress overlay */}
         {processing && (
           <View style={s.processingOverlay}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={s.processingText}>
-              {batchMode ? `Saving page ${capturedPages.length + 1}…` : 'Processing…'}
-            </Text>
+            <View style={s.progressCard}>
+              <View style={s.progressHeader}>
+                <SparklesIcon color={Colors.primary} size={15} />
+                <Text style={s.progressHeaderText}>Neural extraction • {progress}%</Text>
+              </View>
+              
+              <View style={s.progressBarBackground}>
+                <LinearGradient
+                  colors={Gradients.holo}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[s.progressBarFill, { width: `${progress}%` }]}
+                />
+              </View>
+              
+              <Text style={s.progressSubtext}>
+                {progress < 40 
+                  ? 'Decrypting layout matrices...' 
+                  : progress < 75 
+                  ? 'Synthesizing OCR text features...' 
+                  : 'Running intelligence classifications...'}
+              </Text>
+              
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 14 }} />
+            </View>
           </View>
         )}
       </View>
     );
   }
 
-  // ── File Picker Mode ─────────────────────────────────────────────────────────
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
+  // ── File Picker Screen ───────────────────────────────────────────────────────
   return (
-    <View className="flex-1 bg-slate-50 dark:bg-slate-900">
-      {/* Top bar */}
-      <View className="flex-row items-center pt-14 pb-4 px-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
-        <TouchableOpacity onPress={() => router.back()} className="p-2">
-          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M15 18l-6-6 6-6" stroke={isDark ? "#fff" : "#111"} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          </Svg>
+    <View style={s.pickerContainer}>
+      <View style={s.pickerHeader}>
+        <TouchableOpacity onPress={() => router.back()} style={s.pickerBackBtn} activeOpacity={0.8}>
+          <XIcon />
         </TouchableOpacity>
-        <Text className="text-xl font-extrabold text-slate-900 dark:text-white ml-2 tracking-tight">Upload Document</Text>
+        <Text style={s.pickerTitle}>Upload Document</Text>
       </View>
 
-      <View className="flex-1 justify-center px-6">
-        {/* Drop zone */}
-        <View className="bg-white dark:bg-slate-800 border-2 border-dashed border-indigo-100 dark:border-indigo-900/50 rounded-[32px] p-9 items-center mb-8 shadow-sm">
-          <View className="w-[90px] h-[90px] rounded-full bg-indigo-50 dark:bg-indigo-900/30 items-center justify-center mb-5">
-            <UploadBigIcon />
+      <View style={s.pickerContent}>
+        <View style={s.dropZone}>
+          <View style={s.dropZoneIconWrap}>
+            <FilesIcon />
           </View>
-          <Text className="text-lg font-extrabold text-slate-900 dark:text-white mb-1.5">Select a document</Text>
-          <Text className="text-sm text-slate-400 dark:text-slate-500">PDF, JPG, PNG supported</Text>
+          <Text style={s.dropZoneTitle}>Select a document</Text>
+          <Text style={s.dropZoneSub}>PDF, JPG, PNG supported</Text>
         </View>
 
-        {/* Buttons */}
         <TouchableOpacity
-          style={s.primaryBtn}
+          style={s.primaryPickerBtn}
           onPress={pickDocument}
           activeOpacity={0.85}
-          className="bg-indigo-600 py-4 rounded-2xl items-center mb-3 shadow-lg shadow-indigo-200 dark:shadow-none"
         >
-          <Text className="text-white text-base font-bold">Browse Files (PDFs)</Text>
+          <Text style={s.primaryPickerBtnText}>Browse Files (PDFs)</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={s.secondaryPickerBtn}
           onPress={pickImage}
           activeOpacity={0.85}
-          className="bg-white dark:bg-slate-800 py-4 rounded-2xl items-center border-1.5 border-indigo-100 dark:border-indigo-900/50 mb-3"
         >
-          <Text className="text-indigo-600 dark:text-indigo-400 text-base font-bold">Open Photo Library</Text>
+          <Text style={s.secondaryPickerBtnText}>Open Photo Library</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => switchMode('camera')} activeOpacity={0.7} className="py-3 items-center">
-          <Text className="text-slate-400 dark:text-slate-500 text-[15px] font-semibold">Switch to Camera</Text>
+        <TouchableOpacity onPress={() => switchMode('camera')} activeOpacity={0.7} style={s.switchModeBtn}>
+          <Text style={s.switchModeText}>Switch to Camera</Text>
         </TouchableOpacity>
       </View>
 
       {processing && (
-        <View className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 items-center justify-center z-[100]">
-          <ActivityIndicator size="large" color="#6366F1" />
-          <Text className="text-indigo-600 dark:text-indigo-400 mt-4 text-base font-bold">Preparing file…</Text>
+        <View style={s.processingOverlay}>
+          <View style={s.progressCard}>
+            <View style={s.progressHeader}>
+              <SparklesIcon color={Colors.primary} size={15} />
+              <Text style={s.progressHeaderText}>Neural extraction • {progress}%</Text>
+            </View>
+            <View style={s.progressBarBackground}>
+              <LinearGradient
+                colors={Gradients.holo}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[s.progressBarFill, { width: `${progress}%` }]}
+              />
+            </View>
+            <Text style={s.progressSubtext}>Ingesting document upload pipeline...</Text>
+            <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 14 }} />
+          </View>
         </View>
       )}
     </View>
@@ -482,71 +632,138 @@ export default function ScannerScreen() {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  blackFill: { flex: 1, backgroundColor: '#000' },
+const getStyles = (Colors: any, Gradients: any) => StyleSheet.create({
+  blackFill: { flex: 1, backgroundColor: '#060914' },
   center: { alignItems: 'center', justifyContent: 'center' },
 
-  // Camera overlays
+  // Cutout overlay
   overlay: { flexDirection: 'column' },
-  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  overlayTop: { flex: 1, backgroundColor: 'rgba(6,9,20,0.68)' },
   overlayMiddle: { flexDirection: 'row', height: SCAN_H },
-  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
-  overlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
-  scanWindow: { width: SCAN_W, height: SCAN_H, backgroundColor: 'transparent' },
+  overlaySide: { flex: 1, backgroundColor: 'rgba(6,9,20,0.68)' },
+  overlayBottom: { flex: 1, backgroundColor: 'rgba(6,9,20,0.68)' },
+  scanWindow: { width: SCAN_W, height: SCAN_H, backgroundColor: 'transparent', position: 'relative', overflow: 'hidden' },
 
-  // Corners
-  corner: { position: 'absolute', width: 22, height: 22, borderColor: '#FFFFFF' },
-  cornerTL: { top: -1, left: -1, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 4 },
-  cornerTR: { top: -1, right: -1, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 4 },
-  cornerBL: { bottom: -1, left: -1, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 4 },
-  cornerBR: { bottom: -1, right: -1, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 4 },
+  // Animated Scanline
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 5,
+  },
+
+  // Glowing Frame Corners
+  corner: { position: 'absolute', width: 22, height: 22, borderColor: Colors.primary },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: Radius.md },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: Radius.md },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: Radius.md },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: Radius.md },
 
   // Hint
-  hintWrap: { position: 'absolute', top: (H - SCAN_H) / 2 + SCAN_H + 14, left: 0, right: 0, alignItems: 'center' },
-  hintText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500', letterSpacing: 0.3, textAlign: 'center', paddingHorizontal: 20 },
+  hintWrap: { position: 'absolute', top: (H - SCAN_H) / 2 + SCAN_H + 18, left: 0, right: 0, alignItems: 'center' },
+  hintText: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.3, textAlign: 'center', paddingHorizontal: 20 },
 
-  // Top / bottom bars
-  topBar: { position: 'absolute', top: 52, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20 },
-  topTitle: { color: '#fff', fontSize: 15, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-  bottomBar: { position: 'absolute', bottom: 44, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingHorizontal: 32 },
+  // Top header bar
+  topBar: { position: 'absolute', top: 56, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20 },
+  topHeaderSubtitle: { color: Colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2.5 },
+  topHeaderBatch: { color: Colors.primary, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  topActions: { flexDirection: 'row', gap: 6 },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(15,22,40,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exitBtn: {
+    backgroundColor: 'rgba(244,63,94,0.15)',
+    borderColor: 'rgba(244,63,94,0.3)',
+  },
 
-  iconBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  // Bottom Actions Dock
+  actionsDock: {
+    position: 'absolute',
+    bottom: 36,
+    left: 20,
+    right: 20,
+    height: 94,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(11,16,32,0.8)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 16,
+  },
+  dockActionBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  dockIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  shutterHolo: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  dockLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+  },
 
-  // Shutter
-  shutter: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: 'rgba(255,255,255,0.5)', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 8 },
-  shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#fff', borderWidth: 2, borderColor: 'rgba(0,0,0,0.1)' },
-
-  // Batch page strip — anchored to very bottom
+  // Batch page strip
   pageStrip: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 106,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    paddingVertical: 10,
+    backgroundColor: 'rgba(6,9,20,0.85)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 12,
   },
   pageThumbnailWrap: {
-    width: 64,
-    height: 80,
-    borderRadius: 8,
+    width: 60,
+    height: 76,
+    borderRadius: Radius.md,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(99,102,241,0.8)',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    position: 'relative',
   },
   pageThumbnail: { width: '100%', height: '100%' },
   pageBadge: {
     position: 'absolute',
     top: 3,
     left: 3,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#6366F1',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pageBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  pageBadgeText: { color: '#000', fontSize: 9, fontWeight: '800' },
   pageRemoveBtn: {
     position: 'absolute',
     bottom: 3,
@@ -554,39 +771,148 @@ const s = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.85)',
+    backgroundColor: 'rgba(244,63,94,0.9)',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  // Batch Done button — floats above the shutter row
+  // Batch Done button
   batchDoneBtn: {
     position: 'absolute',
-    bottom: 200,   // above shutter bar (110) + shutter height (72) + gap (18)
+    bottom: 156,
     alignSelf: 'center',
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 30,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
+    borderRadius: Radius.full,
+    overflow: 'hidden',
   },
-  batchDoneBtnText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
+  batchDoneGradient: {
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+  },
+  batchDoneBtnText: { color: '#000', fontWeight: '800', fontSize: 13, letterSpacing: 0.5 },
 
-  // Processing
-  processingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  processingText: { color: '#fff', marginTop: 16, fontSize: 16, fontWeight: '600' },
+  // Premium loading progress card
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(6,9,20,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+    paddingHorizontal: 32,
+  },
+  progressCard: {
+    width: '100%',
+    maxWidth: 320,
+    padding: Spacing.xl,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(15,22,40,0.8)',
+    alignItems: 'center',
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  progressHeaderText: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  progressBarBackground: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressSubtext: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
 
-  // Permission
-  permissionTitle: { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
-  permissionSub: { color: '#9CA3AF', fontSize: 15, textAlign: 'center', marginBottom: 28 },
-  settingsBtn: { backgroundColor: '#6366F1', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16 },
-  settingsBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  grantText: { color: '#6366F1', fontWeight: '600', fontSize: 15 },
+  // Camera permissions
+  permissionTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
+  permissionSub: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 28 },
+  settingsBtn: { backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: Radius.lg },
+  settingsBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
+  grantText: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
 
-  // Picker mode
-  primaryBtn: { backgroundColor: '#6366F1', paddingVertical: 16, borderRadius: 18, alignItems: 'center', marginBottom: 12, shadowColor: '#6366F1', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
+  // File Picker mode
+  pickerContainer: { flex: 1, backgroundColor: Colors.bg },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 56,
+    paddingBottom: Spacing.base,
+    paddingHorizontal: Spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: Colors.bg,
+  },
+  pickerBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  pickerTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  pickerContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 36 },
+  dropZone: {
+    backgroundColor: 'rgba(59,232,172,0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,232,172,0.15)',
+    borderStyle: 'dashed',
+    borderRadius: Radius['2xl'],
+    padding: 36,
+    alignItems: 'center',
+    marginBottom: Spacing['2xl'],
+  },
+  dropZoneIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(59,232,172,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,232,172,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xl,
+  },
+  dropZoneTitle: { color: Colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  dropZoneSub: { color: Colors.textMuted, fontSize: 13, fontWeight: '500' },
+  primaryPickerBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: Radius.xl,
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  primaryPickerBtnText: { color: '#000', fontSize: 14, fontWeight: '700' },
+  secondaryPickerBtn: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 14,
+    borderRadius: Radius.xl,
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  secondaryPickerBtnText: { color: Colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  switchModeBtn: { paddingVertical: 12, alignItems: 'center' },
+  switchModeText: { color: Colors.primary, fontSize: 13, fontWeight: '600' },
 });
+

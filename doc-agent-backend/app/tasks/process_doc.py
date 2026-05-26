@@ -57,6 +57,7 @@ def process_document_task(self, document_id: str):
             document_id=doc.id,
             entities=results.get("entities", []),
             classification=results.get("classification", {}),
+            structured_data=results.get("structured_data", {}),
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
         session.add(ext_result)

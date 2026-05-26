@@ -7,6 +7,7 @@ class ExtractionResultResponse(BaseModel):
     document_id: str
     entities: list[Any]
     classification: dict[str, Any]
+    structured_data: Optional[dict[str, Any]] = None
     processing_time_ms: Optional[int] = None
     created_at: datetime
     

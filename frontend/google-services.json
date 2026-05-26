@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "963388402234",
+    "project_id": "auto-document-processing-agent",
+    "storage_bucket": "auto-document-processing-agent.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:963388402234:android:7682f12078d1d7c3366303",
+        "android_client_info": {
+          "package_name": "com.aditya.docagent"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "963388402234-acq5bapd4ub9png3p7t76nfsg5k166v4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBP99Ll_HVIVwgh1OXAsMS85TvekckFF00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "963388402234-acq5bapd4ub9png3p7t76nfsg5k166v4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

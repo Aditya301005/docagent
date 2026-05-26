@@ -1,43 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
-  Alert, 
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform
+import {
+  View, Text, TouchableOpacity, ScrollView, TextInput, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, Stack } from 'expo-router';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { Colors, Spacing, Radius } from '../constants/theme';
+import { showCustomAlert } from '../components/CustomAlert';
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 const BackIcon = () => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-    <Path d="M19 12H5M12 19l-7-7 7-7" stroke="#6366F1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M15 18l-6-6 6-6" stroke={Colors.textPrimary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
-const UserIcon = ({ size = 24, color = "#6366F1" }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+const UserIcon = ({ color = Colors.textMuted }: { color?: string }) => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
     <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Circle cx={12} cy={7} r={4} stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    <Circle cx={12} cy={7} r={4} stroke={color} strokeWidth={2} />
   </Svg>
 );
 
-const LockIcon = ({ size = 20, color = "#6366F1" }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke={color} strokeWidth={2} />
+const LockIcon = ({ color = Colors.textMuted }: { color?: string }) => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="11" width="18" height="11" rx="2" stroke={color} strokeWidth={2} />
     <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke={color} strokeWidth={2} />
   </Svg>
 );
 
-const EyeIcon = ({ size = 20, color = "#94A3B8", hidden = false }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+const EyeIcon = ({ hidden, color = Colors.textMuted }: { hidden?: boolean; color?: string }) => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
     {hidden ? (
       <>
         <Path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -46,13 +43,40 @@ const EyeIcon = ({ size = 20, color = "#94A3B8", hidden = false }) => (
     ) : (
       <>
         <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} />
       </>
     )}
   </Svg>
 );
 
+// ─── Glass Input ──────────────────────────────────────────────────────────────
+
+const FieldInput = ({
+  label, icon, value, onChangeText, secureTextEntry, rightElement, readOnly = false,
+}: any) => (
+  <View style={s.field}>
+    {label && <Text style={s.fieldLabel}>{label}</Text>}
+    <View style={[s.fieldInput, readOnly && s.fieldInputReadOnly]}>
+      {icon}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={secureTextEntry}
+        editable={!readOnly}
+        style={[s.fieldText, readOnly && { color: Colors.textMuted }]}
+        autoCapitalize="none"
+        placeholder="—"
+        placeholderTextColor={Colors.textMuted}
+      />
+      {rightElement}
+    </View>
+  </View>
+);
+
+// ─── Profile Screen ───────────────────────────────────────────────────────────
+
 export default function ProfileScreen() {
+
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -61,256 +85,186 @@ export default function ProfileScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
-    const loadUserData = async () => {
-      try {
-        const savedName = await AsyncStorage.getItem('user_name');
-        const savedEmail = await AsyncStorage.getItem('user_email');
-        if (isMounted) {
-          if (savedName) setName(savedName || 'User');
-          if (savedEmail) setEmail(savedEmail || '');
-        }
-      } catch (err) {
-        console.error(err);
+    const load = async () => {
+      const savedName = await AsyncStorage.getItem('user_name');
+      const savedEmail = await AsyncStorage.getItem('user_email');
+      if (isMounted) {
+        if (savedName) setName(savedName);
+        if (savedEmail) setEmail(savedEmail);
       }
     };
-
-    loadUserData();
+    load();
     return () => { isMounted = false; };
   }, []);
 
   const handleUpdateProfile = async () => {
-    if (!name.trim()) return Alert.alert('Error', 'Name cannot be empty');
-    
+    if (!name.trim()) return showCustomAlert('Error', 'Name cannot be empty');
     setIsUpdating(true);
     try {
       const token = await AsyncStorage.getItem('auth_token');
       const { getAuthUrl } = require('../constants/api');
       const nodeApiUrl = await getAuthUrl();
-        
-      const fullUrl = `${nodeApiUrl}/api/auth/me`;
-      console.log('Profile update targeting:', fullUrl);
-      
-      const response = await axios.patch(fullUrl, {
-        name: name.trim()
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await axios.patch(`${nodeApiUrl}/api/auth/me`, { name: name.trim() }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
       const updatedUser = response.data.user;
-      if (updatedUser && updatedUser.name) {
+      if (updatedUser?.name) {
         await AsyncStorage.setItem('user_name', updatedUser.name);
         setName(updatedUser.name);
-        Alert.alert('Success', 'Profile updated successfully!');
+        showCustomAlert('Success', 'Profile updated successfully!');
       }
     } catch (err: any) {
-      console.error('Profile update error:', err);
-      const msg = err.response?.data?.detail || 'Failed to update profile';
-      Alert.alert('Error', msg);
+      showCustomAlert('Error', err.response?.data?.detail || 'Failed to update profile');
     } finally {
       setIsUpdating(false);
     }
   };
 
   const handleChangePassword = async () => {
-    if (!currentPassword) return Alert.alert('Error', 'Please enter your current password');
-    if (newPassword.length < 6) return Alert.alert('Error', 'New password must be at least 6 characters');
-    if (newPassword !== confirmPassword) return Alert.alert('Error', 'Passwords do not match');
-    
+    if (!currentPassword) return showCustomAlert('Error', 'Please enter your current password');
+    if (newPassword.length < 6) return showCustomAlert('Error', 'New password must be at least 6 characters');
+    if (newPassword !== confirmPassword) return showCustomAlert('Error', 'Passwords do not match');
     setIsUpdating(true);
     try {
       const token = await AsyncStorage.getItem('auth_token');
       const { getAuthUrl } = require('../constants/api');
       const nodeApiUrl = await getAuthUrl();
-
-      const fullUrl = `${nodeApiUrl}/api/auth/change-password`;
-      console.log('Targeting Password Change API at:', fullUrl);
-
-      await axios.post(fullUrl, {
-        currentPassword,
-        newPassword
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
+      await axios.post(`${nodeApiUrl}/api/auth/change-password`, { currentPassword, newPassword }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      Alert.alert('Success', 'Password changed successfully!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      showCustomAlert('Success', 'Password changed successfully!');
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setShowPasswordSection(false);
     } catch (err: any) {
-      console.error('Password change error:', err);
-      const msg = err.response?.data?.detail || err.message || 'Failed to change password';
-      Alert.alert('Error', msg);
+      showCustomAlert('Error', err.response?.data?.detail || 'Failed to change password');
     } finally {
       setIsUpdating(false);
     }
   };
 
+  const initials = (name || email || 'U').charAt(0).toUpperCase();
+
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1 }}
-    >
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View 
-        style={{ flex: 1, paddingTop: insets.top }}
-        className="bg-slate-50 dark:bg-slate-900"
-      >
-        <View className="flex-row items-center px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <TouchableOpacity onPress={() => router.back()} className="mr-4">
+      <View style={[s.container, { paddingTop: insets.top }]}>
+
+        {/* Header */}
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
             <BackIcon />
           </TouchableOpacity>
-          <Text className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Profile</Text>
+          <Text style={s.headerTitle}>Profile</Text>
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }}>
-          <View className="items-center mb-8">
-            <View className="w-24 h-24 rounded-full bg-indigo-50 dark:bg-indigo-900/30 items-center justify-center border-4 border-white dark:border-slate-800 shadow-sm">
-              <Text className="text-4xl font-black text-indigo-600 dark:text-indigo-400">
-                {name.charAt(0).toUpperCase() || 'U'}
-              </Text>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: Spacing.xl, paddingBottom: 100 }}>
+          {/* Avatar */}
+          <View style={s.avatarSection}>
+            <View style={s.avatarRingOuter}>
+              <View style={s.avatarRingInner}>
+                <Text style={s.avatarText}>{initials}</Text>
+              </View>
             </View>
-            <Text className="text-xl font-bold text-slate-900 dark:text-white mt-4">{name || 'User'}</Text>
-            <Text className="text-slate-500 dark:text-slate-400 font-medium">{email}</Text>
+            <Text style={s.avatarName}>{name || 'User'}</Text>
+            <Text style={s.avatarEmail}>{email}</Text>
           </View>
 
-          <View className="bg-white dark:bg-slate-800 rounded-[32px] p-6 shadow-sm border border-slate-100 dark:border-slate-700 mb-6">
-            <Text className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-5 ml-1">Personal Details</Text>
-            
-            <View className="mb-5">
-              <Text className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Full Name</Text>
-              <View className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl px-4 py-3.5 flex-row items-center">
-                <UserIcon size={18} color="#94A3B8" />
-                <TextInput 
-                  value={name}
-                  onChangeText={setName}
-                  className="flex-1 ml-3 text-[15px] font-semibold text-slate-900 dark:text-white"
-                  placeholder="Enter your name"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-            </View>
-
-            <View className="mb-8">
-              <Text className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-2 ml-1">Email Address</Text>
-              <View className="bg-slate-100 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700 rounded-2xl px-4 py-3.5 flex-row items-center opacity-60">
-                <Text className="flex-1 ml-1 text-[15px] font-semibold text-slate-500 dark:text-slate-400">
-                  {email}
-                </Text>
-                <LockIcon size={16} color="#94A3B8" />
-              </View>
-            </View>
-
-            <TouchableOpacity 
+          {/* Personal Details Card */}
+          <View style={s.card}>
+            <Text style={s.cardLabel}>Personal Details</Text>
+            <FieldInput
+              label="Full Name"
+              icon={<UserIcon color={Colors.textMuted} />}
+              value={name}
+              onChangeText={setName}
+            />
+            <FieldInput
+              label="Email Address"
+              icon={<LockIcon color={Colors.textMuted} />}
+              value={email}
+              readOnly
+            />
+            <TouchableOpacity
               onPress={handleUpdateProfile}
               disabled={isUpdating}
-              className="bg-indigo-600 h-[58px] rounded-2xl items-center justify-center shadow-md shadow-indigo-200"
+              style={s.primaryBtn}
+              activeOpacity={0.85}
             >
-              {isUpdating ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-white font-bold text-[16px]">Save Changes</Text>
-              )}
+              {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={s.primaryBtnText}>Save Changes</Text>}
             </TouchableOpacity>
           </View>
 
-          <View className="bg-white dark:bg-slate-800 rounded-[32px] p-6 shadow-sm border border-slate-100 dark:border-slate-700">
-            <Text className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-5 ml-1">Security</Text>
-            
+          {/* Security Card */}
+          <View style={s.card}>
+            <Text style={s.cardLabel}>Security</Text>
+
             {!showPasswordSection ? (
-              <TouchableOpacity 
-                onPress={() => setShowPasswordSection(true)}
-                className="flex-row items-center justify-between py-1"
-              >
-                <View className="flex-row items-center">
-                  <View className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 items-center justify-center mr-4">
-                    <LockIcon size={18} color="#6366F1" />
-                  </View>
-                  <Text className="text-[15px] font-bold text-slate-900 dark:text-white">Change Password</Text>
+              <TouchableOpacity onPress={() => setShowPasswordSection(true)} style={s.securityRow} activeOpacity={0.7}>
+                <View style={s.securityIconWrap}>
+                  <LockIcon color={Colors.primary} />
                 </View>
-                <Text className="text-indigo-600 dark:text-indigo-400 font-bold text-sm">Edit</Text>
+                <Text style={s.securityRowLabel}>Change Password</Text>
+                <Text style={s.securityRowAction}>Edit</Text>
               </TouchableOpacity>
             ) : (
-              <View>
-                <View className="mb-4">
-                  <View className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl flex-row items-center px-4">
-                    <TextInput 
-                      value={currentPassword}
-                      onChangeText={setCurrentPassword}
-                      className="flex-1 py-3.5 text-[15px] font-semibold text-slate-900 dark:text-white"
-                      placeholder="Current Password"
-                      placeholderTextColor="#94A3B8"
-                      secureTextEntry={!showCurrent}
-                    />
-                    <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)} className="p-2">
+              <View style={s.passwordSection}>
+                <FieldInput
+                  icon={<LockIcon color={Colors.textMuted} />}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  secureTextEntry={!showCurrent}
+                  rightElement={
+                    <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)} style={{ padding: 4 }}>
                       <EyeIcon hidden={!showCurrent} />
                     </TouchableOpacity>
-                  </View>
-                </View>
-                <View className="mb-4">
-                  <View className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl flex-row items-center px-4">
-                    <TextInput 
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      className="flex-1 py-3.5 text-[15px] font-semibold text-slate-900 dark:text-white"
-                      placeholder="New Password"
-                      placeholderTextColor="#94A3B8"
-                      secureTextEntry={!showNew}
-                    />
-                    <TouchableOpacity onPress={() => setShowNew(!showNew)} className="p-2">
+                  }
+                />
+                <FieldInput
+                  icon={<LockIcon color={Colors.textMuted} />}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry={!showNew}
+                  rightElement={
+                    <TouchableOpacity onPress={() => setShowNew(!showNew)} style={{ padding: 4 }}>
                       <EyeIcon hidden={!showNew} />
                     </TouchableOpacity>
-                  </View>
-                </View>
-                <View className="mb-5">
-                  <View className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl flex-row items-center px-4">
-                    <TextInput 
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      className="flex-1 py-3.5 text-[15px] font-semibold text-slate-900 dark:text-white"
-                      placeholder="Confirm Password"
-                      placeholderTextColor="#94A3B8"
-                      secureTextEntry={!showConfirm}
-                    />
-                    <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} className="p-2">
+                  }
+                />
+                <FieldInput
+                  icon={<LockIcon color={Colors.textMuted} />}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirm}
+                  rightElement={
+                    <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} style={{ padding: 4 }}>
                       <EyeIcon hidden={!showConfirm} />
                     </TouchableOpacity>
-                  </View>
-                </View>
-                <View className="flex-row gap-3">
-                  <TouchableOpacity 
-                    onPress={() => setShowPasswordSection(false)}
-                    className="flex-1 bg-slate-100 dark:bg-slate-700 h-[50px] rounded-xl items-center justify-center"
-                  >
-                    <Text className="text-slate-900 dark:text-white font-bold">Cancel</Text>
+                  }
+                />
+                <View style={s.passwordBtns}>
+                  <TouchableOpacity onPress={() => setShowPasswordSection(false)} style={s.ghostBtn}>
+                    <Text style={s.ghostBtnText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={handleChangePassword}
-                    className="flex-1 bg-indigo-600 h-[50px] rounded-xl items-center justify-center"
-                  >
-                    <Text className="text-white font-bold">Update</Text>
+                  <TouchableOpacity onPress={handleChangePassword} disabled={isUpdating} style={[s.primaryBtn, { flex: 1, marginTop: 0 }]}>
+                    {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={s.primaryBtnText}>Update</Text>}
                   </TouchableOpacity>
                 </View>
               </View>
             )}
 
-            <View className="h-[1px] bg-slate-50 dark:bg-slate-700 my-5" />
+            <View style={s.divider} />
 
-            <TouchableOpacity 
-              onPress={() => router.push('/forgot-password')}
-              className="flex-row items-center py-1"
-            >
-              <View className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-900/20 items-center justify-center mr-4">
-                <Text className="text-rose-500 font-bold">?</Text>
+            <TouchableOpacity onPress={() => router.push('/forgot-password')} style={s.securityRow} activeOpacity={0.7}>
+              <View style={[s.securityIconWrap, { backgroundColor: 'rgba(244,63,94,0.08)' }]}>
+                <Text style={{ color: Colors.error, fontWeight: '700', fontSize: 14 }}>?</Text>
               </View>
-              <Text className="text-[15px] font-bold text-slate-900 dark:text-white">Forgot Password?</Text>
+              <Text style={s.securityRowLabel}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -318,3 +272,136 @@ export default function ProfileScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.bg },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.md,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: { color: Colors.textPrimary, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+
+  avatarSection: { alignItems: 'center', paddingVertical: Spacing['3xl'] },
+  avatarRingOuter: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0,200,150,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,200,150,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
+  },
+  avatarRingInner: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'rgba(0,200,150,0.18)',
+    borderWidth: 2,
+    borderColor: 'rgba(0,200,150,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: Colors.primaryLight, fontSize: 34, fontWeight: '900' },
+  avatarName: { color: Colors.textPrimary, fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  avatarEmail: { color: Colors.textMuted, fontSize: 14, fontWeight: '500' },
+
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius['3xl'],
+    padding: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
+  cardLabel: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: Spacing.xl,
+  },
+
+  field: { marginBottom: Spacing.base },
+  fieldLabel: { color: Colors.textSecondary, fontSize: 12, fontWeight: '700', marginBottom: 6, marginLeft: 2 },
+  fieldInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.xl,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 6,
+    gap: Spacing.md,
+    minHeight: 50,
+  },
+  fieldInputReadOnly: { backgroundColor: 'rgba(255,255,255,0.02)', opacity: 0.6 },
+  fieldText: { flex: 1, color: Colors.textPrimary, fontSize: 15, fontWeight: '500' },
+
+  primaryBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.xl,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  primaryBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    gap: Spacing.md,
+  },
+  securityIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,200,150,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securityRowLabel: { flex: 1, color: Colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  securityRowAction: { color: Colors.primary, fontSize: 13, fontWeight: '700' },
+
+  passwordSection: { gap: Spacing.sm, marginBottom: Spacing.md },
+  passwordBtns: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md },
+  ghostBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ghostBtnText: { color: Colors.textSecondary, fontSize: 15, fontWeight: '600' },
+
+  divider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.base },
+});

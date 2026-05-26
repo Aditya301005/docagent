@@ -324,3 +324,103 @@ exports.updateMe = async (req, res) => {
     res.status(500).json({ detail: 'Server error during profile update' });
   }
 };
+
+// Delete Account
+exports.deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+    res.status(200).json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ detail: 'Server error during account deletion' });
+  }
+};
+
+// Forgot Vault PIN
+exports.forgotVaultPin = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    
+    if (!user) {
+      return res.status(404).json({ detail: 'User not found' });
+    }
+
+    // Generate 6-digit OTP
+    const resetOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetTokenExpiry = new Date(Date.now() + 15 * 60000); // 15 minutes
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        vaultPinResetToken: resetOtp,
+        vaultPinResetExpiry: resetTokenExpiry,
+      },
+    });
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Vault PIN Reset Request</h2>
+        <p>Hi ${user.name},</p>
+        <p>You requested a reset for your Secure Vault PIN. Please use the following 6-digit code to verify your identity. This code will expire in 15 minutes.</p>
+        <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 5px; font-weight: bold; border-radius: 5px; margin: 20px 0;">
+          ${resetOtp}
+        </div>
+        <p>If you didn't request this, please ignore this email and your Vault PIN will remain unchanged.</p>
+      </div>
+    `;
+
+    console.log('\n=============================================');
+    console.log(`🔐 VAULT PIN RESET CODE FOR ${user.email}: ${resetOtp} 🔐`);
+    console.log('=============================================\n');
+
+    await sendEmail(
+      user.email,
+      `[${resetOtp}] DocAgent - Vault PIN Reset Code`,
+      `Your Vault PIN reset code is: ${resetOtp}`,
+      emailHtml
+    );
+
+    res.status(200).json({ message: 'A 6-digit verification code has been sent to your email.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ detail: 'Server error during forgot vault PIN' });
+  }
+};
+
+// Verify Vault PIN
+exports.verifyVaultPin = async (req, res) => {
+  try {
+    const { token } = req.body;
+    const userId = req.user.id;
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        vaultPinResetToken: token,
+        vaultPinResetExpiry: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({ detail: 'Invalid or expired OTP' });
+    }
+
+    // Success, clear the reset token
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        vaultPinResetToken: null,
+        vaultPinResetExpiry: null,
+      },
+    });
+
+    res.status(200).json({ message: 'OTP verified successfully. You can now set a new Vault PIN.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ detail: 'Server error during vault PIN verification' });
+  }
+};

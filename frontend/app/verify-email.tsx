@@ -7,6 +7,7 @@ import axios from 'axios';
 import { getAuthUrl } from '../constants/api';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { useDocStore } from '../store/useDocStore';
+import { showCustomAlert } from '../components/CustomAlert';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -24,7 +25,7 @@ export default function VerifyEmailScreen() {
 
   const handleVerify = async () => {
     if (!otp || otp.length !== 6) {
-      Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.');
+      showCustomAlert('Invalid Code', 'Please enter the 6-digit code sent to your email.');
       return;
     }
 
@@ -45,17 +46,17 @@ export default function VerifyEmailScreen() {
         }
         setCurrentUserKey(response.data.email || email || 'guest');
         
-        Alert.alert('Success', 'Email verified successfully!', [
+        showCustomAlert('Success', 'Email verified successfully!', [
           { text: 'OK', onPress: () => router.replace('/(tabs)') }
         ]);
       } else {
-        Alert.alert('Success', 'Email verified successfully! You can now log in.', [
+        showCustomAlert('Success', 'Email verified successfully! You can now log in.', [
           { text: 'OK', onPress: () => router.replace('/login') }
         ]);
       }
     } catch (error: any) {
       const msg = error.response?.data?.detail || 'Verification failed. The code might be expired or incorrect.';
-      Alert.alert('Verification Failed', msg);
+      showCustomAlert('Verification Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export default function VerifyEmailScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
           <View style={styles.headerSection}>
@@ -89,7 +90,9 @@ export default function VerifyEmailScreen() {
           </View>
 
           <TouchableOpacity style={styles.mainButton} onPress={handleVerify} activeOpacity={0.85} disabled={loading}>
-            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainButtonText}>Verify Code</Text>}
+            <View style={styles.buttonContent}>
+              {loading ? <ActivityIndicator color="#FFF" style={styles.activityIndicator} /> : <Text style={styles.mainButtonText}>Verify Code</Text>}
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/login')}>
@@ -113,8 +116,10 @@ const styles = StyleSheet.create({
   formSection: { gap: 16, marginBottom: H * 0.04 },
   inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#16162A', borderWidth: 1, borderColor: '#2D2D44', borderRadius: 14, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 14 : 4, gap: 12 },
   textInput: { flex: 1, color: '#FFFFFF', fontSize: 18, letterSpacing: 4, textAlign: 'center' },
-  mainButton: { backgroundColor: '#9D4EDD', borderRadius: 14, paddingVertical: 15, alignItems: 'center', shadowColor: '#9D4EDD', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, marginBottom: 16 },
-  mainButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', letterSpacing: 0.5 },
+  mainButton: { backgroundColor: '#9D4EDD', borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', shadowColor: '#9D4EDD', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, marginBottom: 16 },
+  buttonContent: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  activityIndicator: { position: 'absolute' },
+  mainButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   secondaryButton: { paddingVertical: 15, alignItems: 'center' },
   secondaryButtonText: { color: '#6B6B8D', fontSize: 16 },
 });

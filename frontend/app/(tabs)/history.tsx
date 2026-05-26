@@ -1,24 +1,23 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Image,
-  Dimensions,
-  Animated,
+  View, Text, SectionList, TextInput, TouchableOpacity,
+  ScrollView, Alert, Image, Dimensions, Animated, StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { notifySecurity, notifyActivity } from '../../utils/notifications';
-import { Document, DocumentType } from '../../types';
 import { useDocStore } from '../../store/useDocStore';
+import { Document, DocumentType } from '../../types';
+import { Spacing, Radius } from '../../constants/theme';
+import { useThemeStore } from '../../store/useThemeStore';
+import { AmbientBg } from '../../components/AmbientBg';
+import { showCustomAlert } from '../../components/CustomAlert';
+import { SwipeableTabWrapper } from '../../components/SwipeableTabWrapper';
 
-// ─── Filter types ─────────────────────────────────────────────────────────────
+// ─── Filter Config ────────────────────────────────────────────────────────────
+
 type FilterType = 'all' | DocumentType;
 const FILTERS: { label: string; value: FilterType }[] = [
   { label: 'All', value: 'all' },
@@ -31,301 +30,350 @@ const FILTERS: { label: string; value: FilterType }[] = [
   { label: 'Report', value: 'report' },
 ];
 
-// ─── Icons ───────────────────────────────────────────────────────────────────
-
-const SearchIcon = () => (
-  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-    <Circle cx={11} cy={11} r={8} stroke="#9CA3AF" strokeWidth={2} />
-    <Path d="M21 21l-4.35-4.35" stroke="#9CA3AF" strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-
-const FilterIcon = ({ color = '#334155' }: { color?: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const ChevronRight = () => (
-  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-    <Path d="M9 18l6-6-6-6" stroke="#D1D5DB" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const DocIcon = ({ color = "#6366F1" }: { color?: string }) => (
-  <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-    <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const TrashIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const ShieldLockIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Circle cx="12" cy="11" r="3" stroke="#fff" strokeWidth={2} />
-  </Svg>
-);
-
-const EmptyIcon = () => (
-  <Svg width={80} height={80} viewBox="0 0 24 24" fill="none">
-    <Rect x={3} y={3} width={18} height={18} rx={3} stroke="#C7D2FE" strokeWidth={1.5} />
-    <Path d="M9 9h6M9 13h4" stroke="#C7D2FE" strokeWidth={1.5} strokeLinecap="round" />
-    <Circle cx={17} cy={17} r={5} fill="#EEF2FF" stroke="#6366F1" strokeWidth={1.5} />
-    <Path d="M17 15v2l1 1" stroke="#6366F1" strokeWidth={1.5} strokeLinecap="round" />
-  </Svg>
-);
-
-// ─── Type badge colors ────────────────────────────────────────────────────────
-const typeColor = (type: string) => {
-  const map: Record<string, { bg: string; text: string }> = {
-    invoice: { bg: 'bg-indigo-50 dark:bg-indigo-900', text: 'text-indigo-600 dark:text-indigo-400' },
-    receipt: { bg: 'bg-emerald-50 dark:bg-emerald-900', text: 'text-emerald-500 dark:text-emerald-400' },
-    contract: { bg: 'bg-amber-50 dark:bg-amber-900', text: 'text-amber-500 dark:text-amber-400' },
-    form: { bg: 'bg-sky-50 dark:bg-sky-900', text: 'text-sky-500 dark:text-sky-400' },
-    id_card: { bg: 'bg-fuchsia-50 dark:bg-fuchsia-900', text: 'text-fuchsia-500 dark:text-fuchsia-400' },
-    letter: { bg: 'bg-rose-50 dark:bg-rose-900', text: 'text-rose-500 dark:text-rose-400' },
-    report: { bg: 'bg-green-50 dark:bg-green-900', text: 'text-green-600 dark:text-green-400' },
-    resume: { bg: 'bg-orange-50 dark:bg-orange-900', text: 'text-orange-500 dark:text-orange-400' },
-    unknown: { bg: 'bg-slate-100 dark:bg-slate-700', text: 'text-slate-500 dark:text-slate-300' },
+const getTypeColor = (type: string, Colors: any) => {
+  const map: Record<string, string> = {
+    invoice: Colors.primary,
+    receipt: Colors.secondary,
+    contract: Colors.accent,
+    form: '#F43F5E',
+    id_card: '#10B981',
+    letter: '#F59E0B',
+    report: Colors.secondary,
+    unknown: Colors.textMuted,
   };
-  return map[type] ?? { bg: 'bg-slate-100 dark:bg-slate-700', text: 'text-slate-500 dark:text-slate-300' };
+  return map[type] || Colors.textMuted;
 };
 
-// ─── Filter Bar Component (Memoized) ───
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
-const FilterBar = React.memo(({ activeFilter, onFilterChange }: { activeFilter: string, onFilterChange: (val: FilterType) => void }) => (
-  <View style={{ height: 48, marginBottom: 8 }}>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 20, alignItems: 'center' }}
-    >
-      {FILTERS.map((f) => {
-        const active = activeFilter === f.value;
-        return (
-          <TouchableOpacity
-            key={f.value}
-            onPress={() => onFilterChange(f.value)}
-            style={{ 
-              marginRight: 10,
-              backgroundColor: active ? '#4F46E5' : 'transparent',
-              borderColor: active ? '#4F46E5' : '#E2E8F0',
-            }}
-            className={`px-5 py-2 rounded-full border ${!active ? 'bg-white dark:bg-slate-800 dark:border-slate-700' : ''}`}
-            activeOpacity={0.75}
-          >
-            <Text className={`text-[13px] font-bold ${active ? 'text-white' : 'text-slate-500 dark:text-slate-300'}`}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  </View>
-));
+const SearchIcon = () => {
+  const { Colors } = useThemeStore();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Circle cx={11} cy={11} r={8} stroke={Colors.textMuted} strokeWidth={2} />
+      <Path d="M21 21l-4.35-4.35" stroke={Colors.textMuted} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+};
 
-// ─── Folder Bar Component (Memoized) ───
+const FilterIcon = ({ color, size = 14 }: { color?: string; size?: number }) => {
+  const { Colors } = useThemeStore();
+  const activeColor = color || Colors.textMuted;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" stroke={activeColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
 
-const FolderBar = React.memo(({ activeFolderId, onFolderChange, onFolderLongPress, folders, allDocsCount, getFolderDocCount }: any) => (
-  <View style={{ height: 80, marginBottom: 16 }}>
-    <ScrollView 
-      horizontal 
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 20, alignItems: 'center' }}
-    >
-      <TouchableOpacity 
-        onPress={() => onFolderChange(null)}
-        style={{ 
-          marginRight: 12,
-          backgroundColor: !activeFolderId ? '#4F46E5' : 'transparent',
-          borderColor: !activeFolderId ? '#4F46E5' : '#E2E8F0',
-        }}
-        className={`px-5 py-3.5 rounded-[22px] border ${!activeFolderId ? '' : 'bg-white dark:bg-slate-800 dark:border-slate-700'}`}
-      >
-        <Text className={`font-bold ${!activeFolderId ? 'text-white' : 'text-slate-900 dark:text-white'}`}>All Scans</Text>
-        <Text className={`text-[10px] mt-0.5 ${!activeFolderId ? 'text-indigo-100' : 'text-slate-500'}`}>{allDocsCount} items</Text>
-      </TouchableOpacity>
-      
-      {folders.map((folder: any) => {
-        const isActive = activeFolderId === folder.id;
-        const count = getFolderDocCount(folder.id);
-        return (
-          <TouchableOpacity 
-            key={folder.id}
-            onPress={() => onFolderChange(folder.id)}
-            onLongPress={() => onFolderLongPress?.(folder)}
-            delayLongPress={400}
-            style={{ 
-              marginRight: 12,
-              backgroundColor: isActive ? '#4F46E5' : 'transparent',
-              borderColor: isActive ? '#4F46E5' : '#E2E8F0',
-            }}
-            className={`px-5 py-3.5 rounded-[22px] border ${isActive ? '' : 'bg-white dark:bg-slate-800 dark:border-slate-700'}`}
-          >
-            <Text className={`font-bold ${isActive ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{folder.name}</Text>
-            <Text className={`text-[10px] mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>{count} items</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  </View>
-));
+const SparklesIcon = ({ color, size = 14 }: { color?: string, size?: number }) => {
+  const { Colors } = useThemeStore();
+  const activeColor = color || Colors.primary;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9.813 15.904L9 21L8.188 15.904L3 15L8.188 14.096L9 9L9.813 14.096L15 15L9.813 15.904Z" fill={activeColor} />
+      <Path d="M19.071 7.071L18.5 10.5L17.929 7.071L14.5 6.5L17.929 5.929L18.5 2.5L19.071 5.929L22.5 6.5L19.071 7.071Z" fill={activeColor} />
+    </Svg>
+  );
+};
+
+const DocIcon = ({ color }: { color?: string }) => {
+  const { Colors } = useThemeStore();
+  const activeColor = color || Colors.primary;
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z" stroke={activeColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke={activeColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
+
+const TrashIcon = ({ color = '#FFF' }: { color?: string }) => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+    <Path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ShieldIcon = ({ color = '#FFF' }: { color?: string }) => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={color} strokeWidth={2} />
+    <Circle cx="12" cy="11" r="3" stroke={color} strokeWidth={2} />
+  </Svg>
+);
+
+const ChevronRight = () => {
+  const { Colors } = useThemeStore();
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 18l6-6-6-6" stroke={Colors.textMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (iso: string) => {
   try {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 };
 
-// ─── Swipeable card ──────────────────────────────────────────────────────────
+// ─── Radial Glow SVG ─────────────────────────────────────────────────────────
 
-const ACTION_BTN_WIDTH = 80;
+const RadialGlow = ({ color, size = 48 }: { color: string; size?: number }) => (
+  <Svg style={StyleSheet.absoluteFill} width={size} height={size} viewBox="0 0 48 48">
+    <Defs>
+      <RadialGradient id={`glow-${color.replace('#', '')}`} cx="50%" cy="50%" rx="50%" ry="50%">
+        <Stop offset="0%" stopColor={color} stopOpacity={0.35} />
+        <Stop offset="100%" stopColor={color} stopOpacity={0} />
+      </RadialGradient>
+    </Defs>
+    <Circle cx={24} cy={24} r={24} fill={`url(#glow-${color.replace('#', '')})`} />
+  </Svg>
+);
+
+// ─── Filter Bar ───────────────────────────────────────────────────────────────
+
+const FilterBar = React.memo(({ activeFilter, onFilterChange }: { activeFilter: string; onFilterChange: (v: FilterType) => void }) => {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
+  return (
+    <View style={{ height: 40, marginBottom: Spacing.md }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.xl, gap: 8, alignItems: 'center' }}>
+        {FILTERS.map((f) => {
+          const active = activeFilter === f.value;
+          
+          if (active) {
+            return (
+              <TouchableOpacity
+                key={f.value}
+                onPress={() => onFilterChange(f.value)}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={Gradients.holo}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.filterPillActive}
+                >
+                  <Text style={s.filterTextActive}>{f.label}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          }
+
+          return (
+            <TouchableOpacity
+              key={f.value}
+              onPress={() => onFilterChange(f.value)}
+              style={s.filterPill}
+              activeOpacity={0.7}
+            >
+              <Text style={s.filterText}>{f.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+});
+
+const FolderBar = React.memo(({ activeFolderId, onFolderChange, onFolderLongPress, folders, allDocsCount, getFolderDocCount }: any) => {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
+  return (
+    <View style={{ height: 64, marginBottom: Spacing.sm }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.xl, gap: 8, alignItems: 'center' }}>
+        <TouchableOpacity
+          onPress={() => onFolderChange(null)}
+          style={[s.folderPill, !activeFolderId && s.folderPillActive]}
+          activeOpacity={0.7}
+        >
+          <Text style={[s.folderName, !activeFolderId && s.folderNameActive]}>All Scans</Text>
+          <Text style={[s.folderCount, !activeFolderId && { color: `${Colors.primary}CC` }]}>{allDocsCount} items</Text>
+        </TouchableOpacity>
+        {folders.map((folder: any) => {
+          const isActive = activeFolderId === folder.id;
+          const count = getFolderDocCount(folder.id);
+          return (
+            <TouchableOpacity
+              key={folder.id}
+              onPress={() => onFolderChange(folder.id)}
+              onLongPress={() => onFolderLongPress?.(folder)}
+              delayLongPress={400}
+              style={[s.folderPill, isActive && s.folderPillActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.folderName, isActive && s.folderNameActive]}>{folder.name}</Text>
+              <Text style={[s.folderCount, isActive && { color: `${Colors.primary}CC` }]}>{count} items</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+});
+
+// ─── Swipeable Doc Card ───────────────────────────────────────────────────────
+
+const ACTION_BTN_W = 76;
 
 const SwipeableDocCard = ({
-  doc,
-  onPress,
-  onDelete,
-  onLock,
-  onLongPress,
-  isSelected = false,
-  selectionMode = false,
+  doc, onPress, onDelete, onLock, onLongPress, isSelected = false, selectionMode = false, isLast = false,
 }: {
-  doc: Document;
-  onPress: () => void;
-  onDelete: () => void;
-  onLock: () => void;
-  onLongPress: () => void;
-  isSelected?: boolean;
-  selectionMode?: boolean;
+  doc: Document; onPress: () => void; onDelete: () => void;
+  onLock: () => void; onLongPress: () => void; isSelected?: boolean; selectionMode?: boolean; isLast?: boolean;
 }) => {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
   const translateX = useRef(new Animated.Value(0)).current;
   const [swiped, setSwiped] = useState(false);
+  const typeColor = getTypeColor(doc.type || 'unknown', Colors);
 
   const openActions = () => {
     if (selectionMode) return;
     setSwiped(true);
-    Animated.spring(translateX, { toValue: -(ACTION_BTN_WIDTH * 2), useNativeDriver: true, tension: 80, friction: 12 }).start();
+    Animated.spring(translateX, { toValue: -(ACTION_BTN_W * 2), useNativeDriver: true, tension: 80, friction: 12 }).start();
   };
   const closeActions = () => {
     setSwiped(false);
     Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
   };
 
-  // Reset swipe when selection mode enters
   React.useEffect(() => {
-    if (selectionMode && swiped) {
-      closeActions();
-    }
+    if (selectionMode && swiped) closeActions();
   }, [selectionMode]);
 
-  const tc = typeColor(doc.type || 'unknown');
-
   return (
-    <View 
-      className="mb-3 overflow-hidden relative border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800" 
-      style={{ borderRadius: 20 }}
-    >
-      {/* Behind buttons */}
-      <View className="absolute right-0 top-0 bottom-0 flex-row">
-        <TouchableOpacity 
-          className="w-[80px] bg-indigo-500 items-center justify-center"
-          onPress={() => { closeActions(); onLock(); }}
-        >
-          <ShieldLockIcon />
-          <Text className="text-white text-[11px] font-bold mt-0.5">Lock</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          className="w-[80px] bg-rose-500 items-center justify-center"
-          onPress={onDelete}
-        >
-          <TrashIcon />
-          <Text className="text-white text-[11px] font-bold mt-0.5">Delete</Text>
-        </TouchableOpacity>
+    <View style={s.timelineRow}>
+      {/* Timeline Connector Graphics */}
+      <View style={s.timelineGraphics}>
+        {/* Connection line */}
+        <LinearGradient
+          colors={isLast ? [`${Colors.primary}66`, 'rgba(255,255,255,0.01)'] : [`${Colors.primary}66`, `${Colors.primary}1A`]}
+          style={[s.timelineLine, isLast && { height: 28 }]}
+        />
+        {/* Holographic Glowing Dot */}
+        <View style={[s.timelineDotOuter, { borderColor: `${Colors.primary}4D` }]}>
+          <LinearGradient
+            colors={Gradients.holo}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.timelineDotInner}
+          />
+        </View>
       </View>
 
-      {/* Main card — slides left */}
-      <Animated.View 
-        className="bg-white dark:bg-slate-800"
-        style={[{ transform: [{ translateX }] }]}
-      >
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => { if (swiped) { closeActions(); } else { onPress(); } }}
-          onLongPress={() => { 
-            if (selectionMode) return;
-            if (swiped) { closeActions(); } 
-            else { openActions(); } 
-          }}
-          className={`flex-row items-center p-4 gap-3.5 ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'bg-white dark:bg-slate-800'}`}
-          delayLongPress={300}
-        >
-          {/* Checkbox for selection mode */}
-          {selectionMode && (
-            <View 
-              style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: isSelected ? '#6366F1' : '#CBD5E1', backgroundColor: isSelected ? '#6366F1' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {isSelected && <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>✓</Text>}
-            </View>
-          )}
+      {/* Card Content Outer */}
+      <View style={s.cardOuter}>
+        {/* Behind buttons */}
+        <View style={s.cardBehind}>
+          <TouchableOpacity style={[s.behindBtn, { backgroundColor: `${Colors.primary}D9` }]} onPress={() => { closeActions(); onLock(); }}>
+            <ShieldIcon color="#FFF" />
+            <Text style={s.behindBtnText}>Lock</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.behindBtn, s.behindBtnRight, { backgroundColor: `${Colors.error}D9` }]} onPress={() => { closeActions(); onDelete(); }}>
+            <TrashIcon color="#FFF" />
+            <Text style={s.behindBtnText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Thumbnail */}
-          <View className="w-[52px] h-[64px] rounded-lg bg-indigo-50 dark:bg-indigo-900 overflow-hidden">
-            {doc.imageUri ? (
-              <Image source={{ uri: doc.imageUri }} className="w-full h-full" resizeMode="cover" />
-            ) : (
-              <View className="w-full h-full items-center justify-center">
-                <DocIcon color="#6366F1" />
+        {/* Card */}
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => { if (swiped) { closeActions(); } else { onPress(); } }}
+            onLongPress={() => { if (swiped) { closeActions(); return; } openActions(); }}
+            delayLongPress={300}
+            style={[s.docCard, isSelected && s.docCardSelected]}
+          >
+            {/* Checkbox */}
+            {selectionMode && (
+              <View style={[s.checkbox, isSelected && s.checkboxSelected]}>
+                {isSelected && <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '900' }}>✓</Text>}
               </View>
             )}
-          </View>
 
-          {/* Content */}
-          <View className="flex-1 gap-1.5">
-            <Text 
-              className="text-[15px] font-bold text-slate-900 dark:text-white tracking-tight" 
-              numberOfLines={1}
-              style={{ lineHeight: 22 }}
-            >
-              {doc.filename || 'Untitled'}
-            </Text>
-            <View className="flex-row items-center gap-2 flex-wrap">
-              <View className={`px-2 py-1 rounded-lg ${tc.bg}`}>
-                <Text className={`text-[10px] font-extrabold tracking-wide uppercase ${tc.text}`}>{(doc.type || 'unknown').replace('_', ' ')}</Text>
+            {/* Thumbnail / SVG Radial Glow */}
+            <View style={s.thumbContainer}>
+              <View style={s.thumbWrap}>
+                <RadialGlow color={typeColor} size={48} />
+                {doc.imageUri ? (
+                  <Image source={{ uri: doc.imageUri }} style={s.thumb} resizeMode="cover" />
+                ) : (
+                  <DocIcon color={typeColor} />
+                )}
               </View>
-              <Text className="text-xs color-slate-400 dark:text-slate-500 font-medium">{doc.uploadedAt ? formatDate(doc.uploadedAt) : '—'}</Text>
             </View>
-          </View>
 
-          {/* Chevron */}
-          {!selectionMode && <ChevronRight />}
-        </TouchableOpacity>
-      </Animated.View>
+            {/* Content */}
+            <View style={s.cardContent}>
+              <View style={s.cardHeaderRow}>
+                <Text style={s.cardName} numberOfLines={1}>{doc.filename || 'Untitled'}</Text>
+                <View style={[s.typePill, { borderColor: `${typeColor}30` }]}>
+                  <Text style={[s.typePillText, { color: typeColor }]}>{(doc.type || 'unknown').replace('_', ' ').toUpperCase()}</Text>
+                </View>
+              </View>
+              
+              {/* Extra extracted entities as badges */}
+              <View style={s.cardEntitiesRow}>
+                {doc.entities && doc.entities.slice(0, 3).map((e, idx) => (
+                  <View key={idx} style={s.entityBadge}>
+                    <Text style={s.entityBadgeText} numberOfLines={1}>{e.value}</Text>
+                  </View>
+                ))}
+                {!doc.entities?.length && (
+                  <Text style={s.cardDate}>{doc.uploadedAt ? formatDate(doc.uploadedAt) : '—'}</Text>
+                )}
+              </View>
+            </View>
+
+            {!selectionMode && <ChevronRight />}
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
     </View>
   );
 };
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+const EmptyState = ({ hasFilter }: { hasFilter: boolean }) => {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
+  return (
+    <View style={s.emptyWrap}>
+      <View style={s.emptyIcon}>
+        <DocIcon color={Colors.primary} />
+      </View>
+      <Text style={s.emptyTitle}>{hasFilter ? 'No results found' : 'No documents yet'}</Text>
+      <Text style={s.emptySub}>
+        {hasFilter ? 'Try a different search or filter.' : 'Scan or upload your first document to get started.'}
+      </Text>
+    </View>
+  );
+};
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function HistoryScreen() {
+  const { Colors, Gradients } = useThemeStore();
+  const s = getStyles(Colors, Gradients);
+
   const insets = useSafeAreaInsets();
   const rawFolders = useDocStore((state) => state.folders);
   const allDocuments = useDocStore((state) => state.documents);
   const currentUserKey = useDocStore((state) => state.currentUserKey);
   const addFolder = useDocStore((state) => state.addFolder);
+  const removeDocument = useDocStore((state) => state.removeDocument);
+  const toggleLock = useDocStore((state) => state.toggleLock);
+  const getVisibleDocuments = useDocStore((state) => state.getVisibleDocuments);
+  const removeFolder = useDocStore((state) => state.removeFolder);
+  const updateFolder = useDocStore((state) => state.updateFolder);
 
   const folders = React.useMemo(() => {
     const key = currentUserKey?.trim().toLowerCase() || 'guest';
-    return rawFolders.filter((f) => (f.ownerKey?.trim().toLowerCase() || 'guest') === key);
+    return rawFolders.filter(f => (f.ownerKey?.trim().toLowerCase() || 'guest') === key);
   }, [rawFolders, currentUserKey]);
 
   const allDocs = React.useMemo(() => {
@@ -333,23 +381,15 @@ export default function HistoryScreen() {
     return allDocuments.filter(d => (d.ownerKey?.trim().toLowerCase() || 'guest') === key);
   }, [allDocuments, currentUserKey]);
 
-  const removeDocument = useDocStore((state) => state.removeDocument);
-  const toggleLock = useDocStore((state) => state.toggleLock);
-  const getVisibleDocuments = useDocStore((state) => state.getVisibleDocuments);
-  
-  const removeFolder = useDocStore((state) => state.removeFolder);
-  const updateFolder = useDocStore((state) => state.updateFolder);
-
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(true);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
-  
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const searchInputRef = useRef<TextInput>(null);
 
   const handleAddFolder = () => {
@@ -361,360 +401,579 @@ export default function HistoryScreen() {
   };
 
   const handleFolderLongPress = (folder: any) => {
-    Alert.alert(
-      'Manage Folder',
-      `What would you like to do with "${folder.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => handleDeleteFolder(folder)
-        },
-        { 
-          text: 'Rename', 
-          onPress: () => {
-            setEditingFolderId(folder.id);
-            setEditingFolderName(folder.name);
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeleteFolder = (folder: any) => {
-    Alert.alert(
-      'Delete Folder',
-      `Are you sure you want to delete "${folder.name}"? Documents inside will NOT be deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            removeFolder(folder.id);
-            if (activeFolderId === folder.id) setActiveFolderId(null);
-          }
-        }
-      ]
-    );
+    showCustomAlert('Manage Folder', `What would you like to do with "${folder.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { removeFolder(folder.id); if (activeFolderId === folder.id) setActiveFolderId(null); } },
+      { text: 'Rename', onPress: () => { setEditingFolderId(folder.id); setEditingFolderName(folder.name); } },
+    ]);
   };
 
   const handleRenameFolder = () => {
     if (editingFolderId && editingFolderName.trim()) {
       updateFolder(editingFolderId, { name: editingFolderName.trim() });
       setEditingFolderId(null);
-      setEditingFolderName('');
     }
   };
 
   const handleDelete = (doc: Document) => {
-    Alert.alert(
-      'Delete Document',
-      `Delete "${doc.filename}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            removeDocument(doc.id);
-            notifyActivity(`"${doc.filename}" was permanently deleted.`);
-          },
-        },
-      ],
-    );
+    showCustomAlert('Delete Document', `Delete "${doc.filename}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { removeDocument(doc.id); notifyActivity(`"${doc.filename}" was permanently deleted.`); } },
+    ]);
   };
 
   const handleLock = (doc: Document) => {
-    Alert.alert(
-      'Secure Document?',
-      'This document will be moved to your Secure Vault and hidden from History.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Move to Vault',
-          onPress: async () => {
-            // Locally toggle
-            toggleLock(doc.id);
-            notifySecurity(`"${doc.filename}" encrypted and moved to Vault.`);
-            // In a real app, we'd call the API here too
-            // await patchDocumentLock(doc.id, true);
-          },
-        },
-      ],
-    );
-  };
-
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  const handleToggleSelect = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  const enterSelectionMode = (id: string) => {
-    setSelectionMode(true);
-    setSelectedIds([id]);
+    showCustomAlert('Secure Document?', 'This document will be moved to your Secure Vault and hidden from History.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Move to Vault', onPress: () => { toggleLock(doc.id); notifySecurity(`"${doc.filename}" encrypted and moved to Vault.`); } },
+    ]);
   };
 
   const handleLongPress = (doc: Document) => {
     if (selectionMode) return;
-    
-    Alert.alert(
-      'Document Options',
-      `Manage "${doc.filename}"`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Move to Vault', 
-          onPress: () => handleLock(doc) 
-        },
-        { 
-          text: 'Delete', 
-          style: 'destructive', 
-          onPress: () => handleDelete(doc) 
-        },
-        { 
-          text: 'Select Multiple', 
-          onPress: () => enterSelectionMode(doc.id) 
-        },
-      ]
-    );
+    showCustomAlert('Document Options', `Manage "${doc.filename}"`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Move to Vault', onPress: () => handleLock(doc) },
+      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(doc) },
+      { text: 'Select Multiple', onPress: () => { setSelectionMode(true); setSelectedIds([doc.id]); } },
+    ]);
   };
 
-  const cancelSelection = () => {
-    setSelectionMode(false);
-    setSelectedIds([]);
-  };
+  const cancelSelection = () => { setSelectionMode(false); setSelectedIds([]); };
+  const handleToggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
 
   const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return;
-    Alert.alert(
-      'Delete Documents?',
-      `Permanently delete ${selectedIds.length} selected documents?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete All', 
-          style: 'destructive',
-          onPress: () => {
-            selectedIds.forEach(id => removeDocument(id));
-            notifyActivity(`${selectedIds.length} documents were permanently deleted.`);
-            cancelSelection();
-          }
-        }
-      ]
-    );
+    showCustomAlert('Delete Documents?', `Permanently delete ${selectedIds.length} selected documents?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete All', style: 'destructive', onPress: () => { selectedIds.forEach(id => removeDocument(id)); notifyActivity(`${selectedIds.length} documents deleted.`); cancelSelection(); } },
+    ]);
   };
 
   const handleBulkLock = () => {
-    if (selectedIds.length === 0) return;
-    Alert.alert(
-      'Lock Documents?',
-      `Move ${selectedIds.length} selected documents to Secure Vault?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Move to Vault', 
-          onPress: () => {
-            selectedIds.forEach(id => toggleLock(id));
-            notifySecurity(`${selectedIds.length} documents encrypted and moved to Vault.`);
-            cancelSelection();
-          }
-        }
-      ]
-    );
+    showCustomAlert('Lock Documents?', `Move ${selectedIds.length} selected documents to Secure Vault?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Move to Vault', onPress: () => { selectedIds.forEach(id => toggleLock(id)); notifySecurity(`${selectedIds.length} documents moved to Vault.`); cancelSelection(); } },
+    ]);
   };
 
   const filtered = React.useMemo(() => {
-    const docs = getVisibleDocuments(false); // Hide locked docs
+    const docs = getVisibleDocuments(false);
     return docs.filter((doc) => {
       const q = search.toLowerCase().trim();
-      const matchSearch = !search || 
-        (doc.filename || '').toLowerCase().includes(q) ||
-        (doc.type || '').toLowerCase().replace('_', ' ').includes(q) ||
-        (doc.type || '').toLowerCase().includes(q) ||
-        (doc.rawText || '').toLowerCase().includes(q);
+      const matchSearch = !search || (doc.filename || '').toLowerCase().includes(q) || (doc.type || '').toLowerCase().includes(q);
       const matchType = activeFilter === 'all' || doc.type === activeFilter;
       const matchFolder = !activeFolderId || (doc.folderIds || []).includes(activeFolderId);
       return matchSearch && matchType && matchFolder;
     });
   }, [getVisibleDocuments, allDocuments, search, activeFilter, activeFolderId, currentUserKey]);
 
+  // Group Documents dynamically by Uploaded Time (Today, This Week, Earlier)
+  const sectionsData = React.useMemo(() => {
+    const groups: { label: string; insight: string; data: Document[] }[] = [];
+    const now = new Date();
+    
+    const todayDocs: Document[] = [];
+    const thisWeekDocs: Document[] = [];
+    const olderDocs: Document[] = [];
+    
+    filtered.forEach(doc => {
+      try {
+        const docDate = new Date(doc.uploadedAt);
+        const diffTime = Math.abs(now.getTime() - docDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const isToday = docDate.toDateString() === now.toDateString();
+        
+        if (isToday) {
+          todayDocs.push(doc);
+        } else if (diffDays <= 7) {
+          thisWeekDocs.push(doc);
+        } else {
+          olderDocs.push(doc);
+        }
+      } catch {
+        olderDocs.push(doc);
+      }
+    });
+
+    // Generate Sparks / Intelligence Insight for group
+    const generateInsight = (groupDocs: Document[]) => {
+      if (groupDocs.length === 0) return '';
+      const counts: Record<string, number> = {};
+      let totalSum = 0;
+      let hasTotal = false;
+      
+      groupDocs.forEach(d => {
+        counts[d.type] = (counts[d.type] || 0) + 1;
+        const totalEntity = d.entities?.find(e => e.type === 'total');
+        if (totalEntity) {
+          const val = totalEntity.value;
+          const num = parseFloat(val.replace(/[^0-9.-]/g, ''));
+          if (!isNaN(num)) {
+            totalSum += num;
+            hasTotal = true;
+          }
+        }
+      });
+      
+      const typesStr = Object.entries(counts)
+        .map(([type, count]) => `${count} ${type}${count > 1 ? 's' : ''}`)
+        .join(', ');
+        
+      if (hasTotal) {
+        return `${typesStr} · total $${totalSum.toFixed(2)}`;
+      }
+      return `${groupDocs.length} doc${groupDocs.length > 1 ? 's' : ''} analyzed`;
+    };
+
+    if (todayDocs.length > 0) {
+      groups.push({
+        label: 'Today',
+        insight: generateInsight(todayDocs),
+        data: todayDocs,
+      });
+    }
+    
+    if (thisWeekDocs.length > 0) {
+      groups.push({
+        label: 'This week',
+        insight: generateInsight(thisWeekDocs),
+        data: thisWeekDocs,
+      });
+    }
+    
+    if (olderDocs.length > 0) {
+      groups.push({
+        label: 'Earlier',
+        insight: generateInsight(olderDocs),
+        data: olderDocs,
+      });
+    }
+    
+    return groups;
+  }, [filtered]);
+
   return (
-    <View 
-      style={{ flex: 1, paddingTop: insets.top }}
-      className="bg-slate-50 dark:bg-slate-900"
-    >
-      {/* ── Header ── */}
-      <View className="flex-row justify-between items-center px-6 pt-4 pb-2">
+    <SwipeableTabWrapper leftRoute="/" rightRoute="/vault">
+      <View style={[s.container, { paddingTop: insets.top }]}>
+        <AmbientBg />
+      {/* Header */}
+      <View style={s.header}>
         {selectionMode ? (
-          <View className="flex-1 flex-row items-center justify-between">
-            <TouchableOpacity onPress={cancelSelection} className="flex-row items-center">
-              <Text className="text-indigo-600 font-bold text-lg mr-3">✕</Text>
-              <Text className="text-[22px] font-extrabold text-slate-900 dark:text-white">{selectedIds.length} Selected</Text>
+          <View style={s.headerRow}>
+            <TouchableOpacity onPress={cancelSelection} style={s.cancelBtn}>
+              <Text style={s.cancelText}>✕</Text>
             </TouchableOpacity>
-            <View className="flex-row gap-4">
-              <TouchableOpacity onPress={handleBulkLock} className="bg-indigo-100 dark:bg-indigo-900/30 p-2.5 rounded-xl">
-                <ShieldLockIcon />
+            <Text style={s.headerTitle}>{selectedIds.length} Selected</Text>
+            <View style={s.bulkActions}>
+              <TouchableOpacity onPress={handleBulkLock} style={s.bulkBtn}>
+                <ShieldIcon color={Colors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleBulkDelete} className="bg-rose-100 dark:bg-rose-900/30 p-2.5 rounded-xl">
-                <TrashIconRed />
+              <TouchableOpacity onPress={handleBulkDelete} style={[s.bulkBtn, { backgroundColor: 'rgba(244,63,94,0.12)' }]}>
+                <TrashIcon color={Colors.error} />
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <>
-            <View className="flex-1">
-              <Text className="text-[28px] font-extrabold text-slate-900 dark:text-white tracking-tight">My Documents</Text>
+          <View style={s.headerRow}>
+            <View>
+              <Text style={s.headerSubtitle}>MEMORY ARCHIVE</Text>
+              <View style={s.titleRow}>
+                <Text style={s.headerTitleMain}>Document </Text>
+                <Text style={s.headerTitleHighlight}>Intelligence</Text>
+              </View>
             </View>
-            <View className="flex-row items-center gap-3">
-              <TouchableOpacity 
-                onPress={() => setSelectionMode(true)}
-                className="bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-xl"
-              >
-                <Text className="text-indigo-600 dark:text-indigo-400 font-bold text-xs">Select</Text>
+            <View style={s.headerActions}>
+              <TouchableOpacity onPress={() => setSelectionMode(true)} style={s.headerChip}>
+                <Text style={s.headerChipText}>Select</Text>
               </TouchableOpacity>
               {!isCreatingFolder && (
-                <TouchableOpacity 
-                  onPress={() => setIsCreatingFolder(true)}
-                  className="bg-indigo-600 px-4 py-2 rounded-xl shadow-md"
-                >
-                  <Text className="text-white font-bold text-xs">New Folder</Text>
+                <TouchableOpacity onPress={() => setIsCreatingFolder(true)} style={[s.headerChip, s.headerChipPrimary]}>
+                  <Text style={[s.headerChipText, { color: '#FFF' }]}>+ Folder</Text>
                 </TouchableOpacity>
               )}
             </View>
-          </>
+          </View>
         )}
       </View>
-      
-      {/* ... rest of the folder/search inputs ... */}
+
+      {/* Folder create input */}
       {isCreatingFolder && (
-        <View className="px-5 mb-4 animate-in fade-in slide-in-from-top-2">
-          <View className="flex-row items-center bg-white dark:bg-slate-800 rounded-2xl px-4 py-2.5 shadow-sm border-2 border-indigo-500">
-            <TextInput
-              className="flex-1 text-[15px] color-slate-900 dark:text-white p-0"
-              placeholder="Folder name..."
-              placeholderTextColor="#9CA3AF"
-              value={newFolderName}
-              onChangeText={setNewFolderName}
-              autoFocus
-            />
-            <TouchableOpacity onPress={() => setIsCreatingFolder(false)} className="mr-3">
-              <Text className="text-slate-400 font-bold">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleAddFolder} className="bg-indigo-600 px-4 py-1.5 rounded-lg">
-              <Text className="text-white font-bold text-xs">Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {editingFolderId && (
-        <View className="px-5 mb-4 animate-in fade-in slide-in-from-top-2">
-          <View className="flex-row items-center bg-white dark:bg-slate-800 rounded-2xl px-4 py-2.5 shadow-sm border-2 border-amber-500">
-            <TextInput
-              className="flex-1 text-[15px] color-slate-900 dark:text-white p-0"
-              placeholder="New folder name..."
-              placeholderTextColor="#9CA3AF"
-              value={editingFolderName}
-              onChangeText={setEditingFolderName}
-              autoFocus
-            />
-            <TouchableOpacity onPress={() => setEditingFolderId(null)} className="mr-3">
-              <Text className="text-slate-400 font-bold">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRenameFolder} className="bg-amber-600 px-4 py-1.5 rounded-lg">
-              <Text className="text-white font-bold text-xs">Save</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {!selectionMode && (
-        <View className="px-5 mb-3">
-          <TouchableOpacity 
-            activeOpacity={1}
-            onPress={() => searchInputRef.current?.focus()}
-            className="flex-row items-center bg-white dark:bg-slate-800 rounded-2xl px-4 py-3 gap-2.5 shadow-sm border border-slate-100 dark:border-slate-700"
-          >
-            <SearchIcon />
-            <TextInput
-              ref={searchInputRef}
-              className="flex-1 text-[15px] color-slate-900 dark:text-white p-0"
-              placeholder="Search documents…"
-              placeholderTextColor="#9CA3AF"
-              value={search}
-              onChangeText={setSearch}
-              autoCorrect={false}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text className="color-slate-400 dark:text-slate-500 font-semibold text-lg leading-[22px]">×</Text>
-              </TouchableOpacity>
-            )}
+        <View style={s.folderInputWrap}>
+          <TextInput
+            style={s.folderInput}
+            placeholder="Folder name..."
+            placeholderTextColor={Colors.textMuted}
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            autoFocus
+          />
+          <TouchableOpacity onPress={() => setIsCreatingFolder(false)} style={s.folderCancelBtn}>
+            <Text style={s.folderCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleAddFolder} style={s.folderAddBtn}>
+            <Text style={s.folderAddText}>Add</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {!selectionMode && (
-        <FolderBar 
-          activeFolderId={activeFolderId} 
-          onFolderChange={setActiveFolderId}
-          onFolderLongPress={handleFolderLongPress}
-          folders={folders}
-          allDocsCount={allDocs.length}
-          getFolderDocCount={(fid: string) => allDocs.filter(d => (d.folderIds || []).includes(fid)).length}
-        />
+      {/* Folder rename input */}
+      {editingFolderId && (
+        <View style={s.folderInputWrap}>
+          <TextInput
+            style={s.folderInput}
+            placeholder="New folder name..."
+            placeholderTextColor={Colors.textMuted}
+            value={editingFolderName}
+            onChangeText={setEditingFolderName}
+            autoFocus
+          />
+          <TouchableOpacity onPress={() => setEditingFolderId(null)} style={s.folderCancelBtn}>
+            <Text style={s.folderCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleRenameFolder} style={[s.folderAddBtn, { backgroundColor: Colors.warning }]}>
+            <Text style={s.folderAddText}>Save</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {!selectionMode && <FilterBar activeFilter={activeFilter} onFilterChange={setActiveFilter} />}
-
-      <Text className="px-6 mb-3 text-[13px] color-slate-400 dark:text-slate-500 font-semibold">
-        {filtered.length} {filtered.length === 1 ? 'document' : 'documents'} {selectionMode ? 'available' : ''}
-      </Text>
-
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={filtered.length === 0 ? { flexGrow: 1 } : { paddingBottom: 100, paddingHorizontal: 20 }}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const isSelected = selectedIds.includes(item.id);
-          return (
-            <SwipeableDocCard
-              doc={item}
-              isSelected={isSelected}
-              selectionMode={selectionMode}
-              onPress={() => selectionMode ? handleToggleSelect(item.id) : router.push(`/results?docId=${item.id}&imageUri=${encodeURIComponent(item.imageUri)}`)}
-              onDelete={() => handleDelete(item)}
-              onLock={() => handleLock(item)}
+      {/* Search */}
+      {!selectionMode && (
+        <View style={s.searchContainer}>
+          <View style={s.searchWrap}>
+            <SearchIcon />
+            <TextInput
+              ref={searchInputRef}
+              style={s.searchInput}
+              placeholder="Search semantically…"
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
             />
-          );
-        }}
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center px-10 pt-16">
-            <EmptyIcon />
-            <Text className="text-xl font-extrabold text-slate-900 dark:text-white mt-5 mb-2 text-center">
-              {search || activeFilter !== 'all' ? 'No results found' : 'No documents yet'}
-            </Text>
-            <Text className="text-sm color-slate-500 dark:text-slate-400 text-center leading-[22px]">
-              {search || activeFilter !== 'all'
-                ? 'Try a different search or filter.'
-                : 'Scan or upload your first document to get started.'}
-            </Text>
+            {search.length > 0 ? (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Text style={{ color: Colors.textMuted, fontSize: 18, marginRight: Spacing.sm }}>×</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={s.filterIconBtn}>
+                <FilterIcon color={Colors.textMuted} size={13} />
+              </TouchableOpacity>
+            )}
           </View>
-        }
+        </View>
+      )}
+
+      {/* Folder + Filter Bars */}
+      {!selectionMode && (
+        <>
+          <FolderBar
+            activeFolderId={activeFolderId}
+            onFolderChange={setActiveFolderId}
+            onFolderLongPress={handleFolderLongPress}
+            folders={folders}
+            allDocsCount={allDocs.length}
+            getFolderDocCount={(fid: string) => allDocs.filter(d => (d.folderIds || []).includes(fid)).length}
+          />
+          <FilterBar activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+        </>
+      )}
+
+      {/* Section List for Timeline */}
+      <SectionList
+        sections={sectionsData}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={filtered.length === 0 ? { flexGrow: 1 } : { paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        renderSectionHeader={({ section: { label, insight } }) => (
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionLabel}>{label}</Text>
+            {insight ? (
+              <View style={s.sectionInsight}>
+                <SparklesIcon color={Colors.primary} size={11} />
+                <Text style={s.sectionInsightText}>{insight}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+        renderItem={({ item, index, section }) => (
+          <SwipeableDocCard
+            doc={item}
+            isLast={index === section.data.length - 1}
+            isSelected={selectedIds.includes(item.id)}
+            selectionMode={selectionMode}
+            onPress={() => selectionMode ? handleToggleSelect(item.id) : router.push(`/results?docId=${item.id}&imageUri=${encodeURIComponent(item.imageUri)}`)}
+            onDelete={() => handleDelete(item)}
+            onLock={() => handleLock(item)}
+            onLongPress={() => handleLongPress(item)}
+          />
+        )}
+        ListEmptyComponent={<EmptyState hasFilter={!!(search || activeFilter !== 'all')} />}
       />
-    </View>
+      </View>
+    </SwipeableTabWrapper>
   );
 }
 
-const TrashIconRed = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#FF4757" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const getStyles = (Colors: any, Gradients: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.bg },
+
+  header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.sm },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerSubtitle: { color: Colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  headerTitleMain: { color: Colors.textPrimary, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 },
+  headerTitleHighlight: { color: Colors.primary, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 },
+  headerTitle: { color: Colors.textPrimary, fontSize: 22, fontWeight: '700', letterSpacing: -0.5, flex: 1 },
+  cancelBtn: { marginRight: Spacing.md, width: 28 },
+  cancelText: { color: Colors.error, fontSize: 16, fontWeight: '700' },
+  headerActions: { flexDirection: 'row', gap: 6 },
+  headerChip: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.lg,
+  },
+  headerChipPrimary: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  headerChipText: { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' },
+  bulkActions: { flexDirection: 'row', gap: 8 },
+  bulkBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59,232,172,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  folderInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: Radius.xl,
+    paddingHorizontal: Spacing.base,
+    height: 48,
+    gap: Spacing.md,
+  },
+  folderInput: { flex: 1, color: Colors.textPrimary, fontSize: 14, fontWeight: '500' },
+  folderCancelBtn: { paddingHorizontal: 4 },
+  folderCancelText: { color: Colors.textMuted, fontSize: 13, fontWeight: '600' },
+  folderAddBtn: { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.md },
+  folderAddText: { color: '#000', fontSize: 12, fontWeight: '700' },
+
+  searchContainer: {
+    paddingHorizontal: Spacing.xl,
+    marginBottom: Spacing.md,
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.xl,
+    paddingHorizontal: Spacing.base,
+    height: 46,
+    gap: Spacing.md,
+  },
+  searchInput: { flex: 1, color: Colors.textPrimary, fontSize: 14, fontWeight: '400' },
+  filterIconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  filterPill: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  filterPillActive: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+  },
+  filterText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
+  filterTextActive: { fontSize: 12, fontWeight: '700', color: '#000' },
+
+  folderPill: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.xl,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  folderPillActive: {
+    backgroundColor: 'rgba(59,232,172,0.1)',
+    borderColor: 'rgba(59,232,172,0.3)',
+  },
+  folderName: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  folderNameActive: { color: Colors.primary },
+  folderCount: { color: Colors.textMuted, fontSize: 9, fontWeight: '500', marginTop: 1 },
+
+  // Sections Header
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  sectionLabel: { color: Colors.textPrimary, fontSize: 14, fontWeight: '600' },
+  sectionInsight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sectionInsightText: { color: Colors.textMuted, fontSize: 10, fontWeight: '500' },
+
+  // Timeline & Cards
+  timelineRow: {
+    flexDirection: 'row',
+    paddingLeft: Spacing.xl,
+    paddingRight: Spacing.xl,
+    marginBottom: Spacing.md,
+  },
+  timelineGraphics: {
+    width: 20,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 9.5,
+    top: 0,
+    bottom: -Spacing.md, // stretches down to join next item
+    width: 1,
+  },
+  timelineDotOuter: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(11,16,32,1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 26, // matches center height of card thumbnail
+    borderWidth: 1,
+    borderColor: 'rgba(59,232,172,0.3)',
+  },
+  timelineDotInner: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+
+  cardOuter: {
+    flex: 1,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(15,22,40,0.3)',
+  },
+  cardBehind: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    width: ACTION_BTN_W * 2,
+  },
+  behindBtn: {
+    width: ACTION_BTN_W,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  behindBtnRight: { borderTopRightRadius: Radius.xl, borderBottomRightRadius: Radius.xl },
+  behindBtnText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
+
+  docCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0E1424', // Solid dark color hides the buttons behind
+    padding: Spacing.base,
+    gap: Spacing.md,
+  },
+  docCardSelected: { backgroundColor: 'rgba(59,232,172,0.06)' },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+
+  thumbContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbWrap: {
+    width: 40,
+    height: 48,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  thumb: { width: '100%', height: '100%' },
+
+  cardContent: { flex: 1 },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  cardName: { color: Colors.textPrimary, fontSize: 14, fontWeight: '600', flex: 1 },
+  typePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  typePillText: { fontSize: 8, fontWeight: '700', letterSpacing: 0.5 },
+  cardEntitiesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: Spacing.xs },
+  entityBadge: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  entityBadgeText: { color: Colors.textSecondary, fontSize: 9, fontWeight: '500' },
+  cardDate: { color: Colors.textMuted, fontSize: 11, fontWeight: '500' },
+
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingTop: 60 },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(59,232,172,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,232,172,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xl,
+  },
+  emptyTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  emptySub: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+});
+
