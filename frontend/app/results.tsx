@@ -34,6 +34,8 @@ import { ScannerSkeleton } from '../components/ScannerSkeleton';
 import { Document, DocumentType, Entity } from '../types';
 import Markdown from 'react-native-markdown-display';
 import { showCustomAlert } from '../components/CustomAlert';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { saveDocumentToServer } from '../utils/syncDocuments';
 
 const getMarkdownStyles = (Colors: any) => ({
   body: { color: 'rgba(248,250,252,0.8)', fontSize: 14, lineHeight: 22 },
@@ -295,10 +297,15 @@ export default function ResultsScreen() {
             },
             {
               text: 'Save Anyway',
-              onPress: () => {
+              onPress: async () => {
                 useDocStore.getState().addDocument(newDoc);
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 notifySuccess(`Saved (duplicate of "${duplicate.doc.filename}").`);
+                // Sync to server (fire-and-forget)
+                const token = await AsyncStorage.getItem('auth_token');
+                if (token && token !== 'guest') {
+                  saveDocumentToServer(token, imageUri, newDoc);
+                }
               },
             },
           ]
@@ -307,6 +314,14 @@ export default function ResultsScreen() {
         useDocStore.getState().addDocument(newDoc);
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         notifySuccess(`Successfully extracted data.`);
+        // ── Sync to server (fire-and-forget) ─────────────────────────────
+        // Persist the processed document to the backend database so it
+        // survives app reinstalls / data clears.
+        const token = await AsyncStorage.getItem('auth_token');
+        if (token && token !== 'guest') {
+          saveDocumentToServer(token, imageUri, newDoc);
+        }
+        // ─────────────────────────────────────────────────────────────────
       }
 
     } catch (err: any) {

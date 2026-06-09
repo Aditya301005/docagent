@@ -1,399 +1,244 @@
-# DocAgent
+# DocAgent AI: Advanced Document Scanning & Intelligence Platform
 
-DocAgent is a document-processing app with:
+## Project Overview
+DocAgent is an advanced, AI-powered document scanning and intelligence application. It bridges the gap between physical documents and structured digital data by utilizing cutting-edge on-device mobile features combined with powerful cloud-based AI inference models.
 
-- an Expo React Native frontend in `frontend/`
-- a FastAPI + Celery backend in `doc-agent-backend/`
-- a separate Node/Prisma auth service in `node-auth-backend/`
-- local document models already checked into `doc-agent-backend/app/models/`
+The primary goal of DocAgent is to allow users to capture images of physical documents (like invoices, receipts, contracts, ID cards, and forms) and instantly extract structured, meaningful data from them. Beyond simple Optical Character Recognition (OCR), DocAgent uses Large Language Models (LLMs) to logically understand the document—identifying totals, dates, names, addresses, and document types autonomously.
 
-## Project Layout
+---
 
-```text
-DocAgent/
-|-- frontend/             Expo mobile app
-|-- doc-agent-backend/    FastAPI API + Celery + OCR + ML inference
-|-- node-auth-backend/    Node auth/email service for login/register/reset
-|-- scripts/              Utility scripts
-`-- README.md
+## Architecture Diagram
+
+Here is a visual overview of how the frontend, the FastAPI backend, the Express authentication service, and the external AI services are organized:
+
+```mermaid
+graph TD
+    %% Define Nodes
+    subgraph MobileApp ["Mobile Frontend (React Native / Expo)"]
+        ExpoRouter["Expo Router (Navigation)"]
+        Zustand["Zustand (Local State & Store)"]
+        SecureStore["SecureStore / AsyncStorage"]
+        Scanner["Camera Scanner / Document Picker"]
+    end
+
+    subgraph AuthBackend ["Node.js Authentication Backend"]
+        Express["Express API Server (Port 3000)"]
+        Prisma["Prisma ORM"]
+        SMTP["SMTP Mail Client"]
+    end
+
+    subgraph CoreBackend ["FastAPI AI Inference Backend"]
+        FastAPI["FastAPI API (Port 8000)"]
+        SQLAlchemy["SQLAlchemy ORM"]
+        Celery["Celery Worker (Background Inference)"]
+    end
+
+    subgraph DataCache ["Database & Caching Layer"]
+        Postgres[(PostgreSQL Database)]
+        Redis[(Redis Cache & Broker)]
+    end
+
+    subgraph ExternalServices ["External AI APIs"]
+        Gemini["Google Gemini API (3.1-flash-lite)"]
+        OpenRouter["OpenRouter (Alternative Fallback)"]
+    end
+
+    subgraph LocalModels ["Local ONNX Models (Offline Fallback)"]
+        Classifier["classifier.onnx"]
+        NER["ner_fixed.onnx"]
+        VQA["vqa.onnx"]
+    end
+
+    %% Connections
+    Scanner --> |Capture Image| Zustand
+    ExpoRouter --> |Auth / Reset Password| Express
+    Express --> |Read/Write User Data| Prisma
+    Prisma --> Postgres
+    Express --> |Send Verification Mail| SMTP
+    
+    Zustand --> |Bearer JWT Authentication| FastAPI
+    Zustand --> |Upload Image & Sync Results| FastAPI
+    
+    FastAPI --> |CRUD Operations| SQLAlchemy
+    SQLAlchemy --> Postgres
+    
+    FastAPI --> |Broker Task Enqueuing| Redis
+    Redis --> Celery
+    Celery --> |Database Updates| Postgres
+    
+    FastAPI --> |Multimodal LLM Request| Gemini
+    FastAPI --> |API Fallbacks| OpenRouter
+    FastAPI --> |Local CPU ONNX Inference| LocalModels
 ```
 
-## Models Included In This Repo
+---
 
-The backend already contains local model assets in `doc-agent-backend/app/models/`.
+## Features
 
-Default runtime path:
+- **AI-Powered Entity & Classification Extraction**: Points the camera at a document, performs visual OCR and entity extraction, classifies the document type, and returns structured fields (like totals, dates, names, and addresses) as structured JSON.
+- **Intelligent Scan History**: A searchable archive of all scanned documents, dynamically grouped by time (Today, This Week, Earlier) with AI-generated insights (e.g., "3 invoices · total $450.00").
+- **Secure Document Vault**: Highly sensitive documents (like ID cards or contracts) can be moved to a Secure Vault locked behind a 6-digit PIN. These documents are encrypted locally and hidden from the main history.
+- **Microservice Token Synchronization**: Handles secure logins, registration, and email verification through a dedicated Node service. Automatically shadow-registers users on the FastAPI core database upon first API requests using JWT decoding.
+- **Local/Offline Inference Capability**: Includes local pre-trained ONNX models (`classifier.onnx`, `ner_fixed.onnx`, `vqa.onnx`) directly in the codebase for zero-setup execution and optional offline performance.
+- **Immersive UI/UX Aesthetics**: Beautiful glassmorphic design featuring ambient floating orbs, fluid swipeable tab navigation, custom haptic feedback, and an animated skeleton loading system to mask latency.
 
-- `classifier.onnx`
-- `ner_fixed.onnx`
-- `vqa.onnx`
-- tokenizer / processor folders:
-  - `app/models/classifier/`
-  - `app/models/ner/`
-  - `app/models/vqa/`
+---
 
-For normal startup, you do not need to download models first.
+## Technology Stack
 
-There is also an alternate HuggingFace-based model loader in the backend code, but the active inference path used by the API and Celery worker currently uses the local ONNX models above.
+### 1. Mobile Frontend
+- **Framework**: React Native managed by Expo (SDK 52+).
+- **Navigation**: Expo Router (file-based navigation) with `react-native-gesture-handler` wrappers.
+- **State Management**: Zustand for global state (`useDocStore`, `useThemeStore`).
+- **Persistence**: `AsyncStorage` for normal caching; `SecureStore` for Vault PINs and auth tokens.
+- **Animations & UI**: `react-native-reanimated` (for 60fps spring transitions), `react-native-svg` (for dynamic gradient orbs), and `expo-haptics`.
 
-## What You Need Installed
+### 2. Core Python Backend
+- **Framework**: FastAPI with Uvicorn server, containerized with Docker & Docker Compose.
+- **Database Access**: SQLAlchemy (async session) & Alembic database migrations.
+- **Task Queue**: Celery task runner with Redis.
+- **AI Engine**: Google Gemini API integration (specifically leveraging `gemini-3.1-flash-lite`), OpenRouter fallbacks, and Tesseract OCR.
+- **Local Inference**: ONNX Runtime running local `.onnx` models.
 
-### Required
+### 3. Node.js Auth Backend
+- **Framework**: Node.js & Express.
+- **Database ORM**: Prisma Client.
+- **Authentication**: Stateless JWT token generation & verification.
+- **Mailing**: Nodemailer configured for SMTP.
 
-- Docker Desktop
-- Node.js 18+
+### 4. Database & Broker Layer
+- **PostgreSQL**: Shared database for user credentials and documents metadata.
+- **Redis**: Serves as a Celery broker and caching database.
 
-### Required only if you run the Python backend outside Docker
+---
 
-- Python 3.11
-- Tesseract OCR for Windows
+## Pre-requisites & Installation Steps
 
-## Services and Ports
+### 1. System Requirements
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Required)
+- [Node.js](https://nodejs.org/) v18+ (Required)
+- [Python 3.11](https://www.python.org/) & [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) (Only if running the backend outside Docker)
 
-| Service | Folder | Port | Required |
-|---|---|---:|---|
-| FastAPI API | `doc-agent-backend/` | `8000` | Yes |
-| Celery worker | `doc-agent-backend/` | n/a | Yes |
-| PostgreSQL | Docker compose | `5432` | Yes |
-| Redis | Docker compose | `6379` | Yes |
-| Node auth service | `node-auth-backend/` | `3000` | Yes for login/register/forgot-password |
-| Expo dev server | `frontend/` | `8081` usually | Yes for mobile app |
+### 2. Configure Environment Files
 
-If you only use guest mode in the app, the Node auth service is not required.
+You need to create `.env` files in two locations:
 
-## Quick Start
-
-Start services in this order:
-
-1. Docker Desktop
-2. FastAPI backend + Postgres + Redis + Celery
-3. Node auth backend
-4. Expo frontend
-
-## 1. Start Docker Desktop
-
-Open Docker Desktop and wait for it to finish starting.
-
-If Docker Desktop refuses to reopen with the lingering-process error, use the fix tagged below:
-
-### [DOCKER-DESKTOP-FIX]
-
-```powershell
-powershell -ExecutionPolicy Bypass -File ".\scripts\restart-docker-desktop.ps1" -Launch
-```
-
-## 2. Configure the FastAPI Backend
-
-Create `doc-agent-backend/.env`.
-
-Recommended Docker setup:
-
+#### Core Backend Configuration
+Create [doc-agent-backend/.env](file:///c:/Users/adity/OneDrive/Desktop/DocAgent/doc-agent-backend/.env):
 ```env
 POSTGRES_USER=docagent_user
 POSTGRES_PASSWORD=yourpassword123
 DATABASE_URL=postgresql+asyncpg://docagent_user:yourpassword123@db:5432/docagent
 REDIS_URL=redis://redis:6379/0
-SECRET_KEY=change-this-to-a-long-random-string
+SECRET_KEY=your-jwt-secret-key-must-be-long-and-random
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 UPLOAD_DIR=./uploads
 MAX_FILE_SIZE_MB=20
 TESSERACT_CMD=tesseract
 
-# Optional tuning
-MODEL_DIR=
-QA_MODEL_DIR=
+# Optional configurations
 INFERENCE_DEVICE=cpu
 CONFIDENCE_THRESHOLD=0.70
 ```
 
-Notes:
-
-- `MODEL_DIR` and `QA_MODEL_DIR` are optional for this repo's default startup.
-- Leaving them empty is fine.
-- The checked-in ONNX models are already used by the active inference path.
-
-## 3. Start the FastAPI Backend Stack
-
-From the project root:
-
-```powershell
-cd ".\doc-agent-backend"
-docker compose up --build
-```
-
-This starts:
-
-- PostgreSQL
-- Redis
-- FastAPI on `http://localhost:8000`
-- Celery worker
-
-Keep that terminal open.
-
-Health checks:
-
-```text
-http://localhost:8000/health
-http://localhost:8000/docs
-```
-
-Expected health response:
-
-```json
-{"status":"ok","service":"DocAgent","version":"1.0.0"}
-```
-
-## 4. Configure the Node Auth Backend
-
-The frontend login, register, verify-email, forgot-password, and reset-password flows call the Node auth service on port `3000`.
-
-Create `node-auth-backend/.env`.
-
-Example:
-
+#### Node Auth Backend Configuration
+Create [node-auth-backend/.env](file:///c:/Users/adity/OneDrive/Desktop/DocAgent/node-auth-backend/.env):
 ```env
 PORT=3000
 DATABASE_URL=postgresql://docagent_user:yourpassword123@localhost:5432/docagent
-JWT_SECRET=change-this-to-a-long-random-string
+JWT_SECRET=your-jwt-secret-key-must-be-long-and-random
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your-email@example.com
-SMTP_PASS=your-email-password-or-app-password
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-gmail-app-password
 
 FRONTEND_URL=docagent://
 ```
 
-Notes:
+---
 
-- `DATABASE_URL` here is for Prisma and should use the normal PostgreSQL URL format.
-- If you use Docker for Postgres, `localhost:5432` is correct from the Windows host.
-- `FRONTEND_URL` is used to build password reset links. Set it to the URL/deep link you actually want users to open.
+## How to Run Backend & Databases
 
-## 5. Start the Node Auth Backend
+We provide two backend services: the AI Inference Engine and the Node.js Auth/User Service.
 
-Open a new terminal:
-
+### Step 1: Start Core Python Backend (FastAPI, Redis, Postgres, Celery)
+Navigate to the `doc-agent-backend/` folder and launch the Docker stack:
 ```powershell
-cd ".\node-auth-backend"
+cd doc-agent-backend
+docker compose up --build
+```
+This launches:
+- **FastAPI server** at `http://localhost:8000`
+- **PostgreSQL database** at port `5432`
+- **Redis instance** at port `6379`
+- **Celery worker** task queue runner
+
+Verify it works by opening the OpenAPI documentation at: `http://localhost:8000/docs`.
+
+### Step 2: Start Node.js Authentication Backend
+Open a new terminal and run:
+```powershell
+cd node-auth-backend
 npm install
 npx prisma generate
 npx prisma db push
 npm run dev
 ```
+Verify the authentication health check by visiting: `http://localhost:3000/health`.
 
-Health check:
+---
 
-```text
-http://localhost:3000/health
-```
+## How to Run Frontend
 
-Expected response:
-
-```json
-{"status":"ok","service":"docagent-node-auth"}
-```
-
-## 6. Start the Expo Frontend
-
-Open another new terminal:
-
+Open a third terminal window to start the Expo Metro dev server:
 ```powershell
-cd ".\frontend"
+cd frontend
 npm install
 npx expo start
 ```
+Use the QR code in the terminal to load the application inside **Expo Go** on a physical iOS or Android device, or press `a` for Android Emulator or `i` for iOS Simulator.
 
-Then open the app with:
+### Device Connection Settings
+The frontend is pre-configured to detect API urls, but if you run on different devices, set the target API URL manually inside the app settings:
+- **Android Emulator**: `http://10.0.2.2:8000`
+- **iOS Simulator**: `http://localhost:8000`
+- **Physical Device**: `http://<YOUR_LAN_IP>:8000`
 
-- Expo Go on a physical device
-- Android emulator
-- iOS simulator
+---
 
-## 7. API URL in the App
+## Sample Workflow
 
-The frontend tries to auto-detect the FastAPI backend, but if it fails, set the API URL manually inside the app settings.
+Here is how to test a full user flow from scratch:
 
-Use:
+1. **User Sign Up & Authentication**:
+   - Open the app. Click **Sign Up** to create an account.
+   - Enter your email and password. The Express Backend sends a verification email using SMTP.
+   - Login to retrieve your secure JWT access token.
+2. **First-Time Document Extraction (Connected Mode)**:
+   - Go to the **Scan** tab. Use your camera or select an image file (e.g., a sample receipt or invoice).
+   - Press **Extract**. The frontend uploads the image via multipart FormData to the FastAPI `/api/documents/sync` endpoint.
+   - The FastAPI backend extracts the text, sends it to Google's Gemini LLM to execute structured extraction, and parses the result into classification types, confidence metrics, and clean keys.
+3. **Local Store Hydration**:
+   - On succeeding logins or application reinstalls, the app calls `syncDocumentsFromServer`.
+   - The app reconciles local files with server history, ensuring all scanned documents are restored.
+4. **Moving sensitive documents to the Vault**:
+   - Locate a document card in history (e.g. an ID card).
+   - Swipe or click to lock the document. Setup a 6-digit PIN.
+   - The file will be hidden from the standard history screen and moved to the encrypted **Secure Vault** tab, accessible only upon entering the PIN.
 
-| Device | API URL |
-|---|---|
-| Android emulator | `http://10.0.2.2:8000` |
-| iOS simulator | `http://localhost:8000` |
-| Physical phone on same Wi-Fi | `http://<your-lan-ip>:8000` |
+---
 
-To find your LAN IP:
+## Team Members
+- **Aditya (Lead Engineer & Creator)** - [@Aditya301005](https://github.com/Aditya301005)
 
-```powershell
-ipconfig
-```
+---
 
-The auth service is derived automatically by replacing port `8000` with `3000`.
-
-## Startup Checklist
-
-Use this as the shortest repeatable sequence:
-
-### Terminal 1 - backend stack
-
-```powershell
-cd ".\doc-agent-backend"
-docker compose up --build
-```
-
-### Terminal 2 - auth service
-
-```powershell
-cd ".\node-auth-backend"
-npm install
-npx prisma generate
-npx prisma db push
-npm run dev
-```
-
-### Terminal 3 - frontend
-
-```powershell
-cd ".\frontend"
-npm install
-npx expo start
-```
-
-## First Run Verification
-
-Verify these before testing the app:
-
-1. `http://localhost:8000/health` works
-2. `http://localhost:8000/docs` opens
-3. `http://localhost:3000/health` works
-4. Expo starts and shows a QR code or emulator options
-
-Then in the app:
-
-1. Use guest mode, or
-2. Register/login through the Node auth backend
-3. Upload or scan a document
-4. Confirm results are returned from the backend
-
-## Stopping Everything
-
-### Docker backend stack
-
-In the `doc-agent-backend` terminal:
-
-```powershell
-Ctrl + C
-docker compose down
-```
-
-To remove database volume too:
-
-```powershell
-docker compose down -v
-```
-
-### Node auth backend
-
-```powershell
-Ctrl + C
-```
-
-### Expo frontend
-
-```powershell
-Ctrl + C
-```
-
-## Running the Python Backend Without Docker
-
-Use this only if you do not want Docker for the FastAPI/Celery stack.
-
-### Local backend `.env`
-
-```env
-POSTGRES_USER=docagent_user
-POSTGRES_PASSWORD=yourpassword123
-DATABASE_URL=postgresql+asyncpg://docagent_user:yourpassword123@localhost:5432/docagent
-REDIS_URL=redis://localhost:6379/0
-SECRET_KEY=change-this-to-a-long-random-string
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=10080
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE_MB=20
-TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
-MODEL_DIR=
-QA_MODEL_DIR=
-INFERENCE_DEVICE=cpu
-CONFIDENCE_THRESHOLD=0.70
-```
-
-### Manual backend start
-
-```powershell
-cd ".\doc-agent-backend"
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Start the Celery worker in another terminal:
-
-```powershell
-cd ".\doc-agent-backend"
-.\venv\Scripts\Activate.ps1
-celery -A app.tasks.celery_app worker --pool=solo --loglevel=info
-```
-
-## Common Startup Issues
-
-### Docker compose says no configuration file was found
-
-Run it from `doc-agent-backend/`, not the project root:
-
-```powershell
-cd ".\doc-agent-backend"
-docker compose up --build
-```
-
-### App cannot reach the backend
-
-- Make sure FastAPI is running on port `8000`
-- Make sure the app API URL is correct
-- Use `10.0.2.2` on Android emulator instead of `localhost`
-
-### Login/register does not work but guest mode works
-
-The Node auth backend is not running, or its `.env` / Prisma setup is incomplete.
-
-Start:
-
-```powershell
-cd ".\node-auth-backend"
-npx prisma generate
-npx prisma db push
-npm run dev
-```
-
-### PowerShell blocks local scripts
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-## Optional: Pre-download HuggingFace Models
-
-This is optional and not required for the default ONNX startup path.
-
-```powershell
-cd ".\doc-agent-backend"
-python download_models.py
-```
-
-## Last Updated
-
-April 2026
+## License / Acknowledgment
+- **License**: Distributed under the MIT License. See `LICENSE` for details.
+- **Acknowledgments**:
+  - Google Gemini API SDK & Google AI Studio
+  - Expo and the React Native Community
+  - Prisma Client & PostgreSQL
+  - FastAPI & Celery

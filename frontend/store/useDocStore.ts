@@ -14,6 +14,12 @@ interface DocStore {
   clearAll: () => void;
   getById: (id: string) => Document | undefined;
   toggleLock: (id: string) => void;
+  /**
+   * Merges documents fetched from the server into the local store.
+   * Server documents replace any local copy with the same ID.
+   * Local-only documents (e.g. guest scans) are left untouched.
+   */
+  hydrateFromServer: (serverDocs: Document[]) => void;
   
   // 🔐 Vault
   isVaultAuthenticated: boolean;
@@ -97,6 +103,18 @@ export const useDocStore = create<DocStore>()(
           doc.id === id ? { ...doc, isLocked: !doc.isLocked } : doc
         )
       })),
+      hydrateFromServer: (serverDocs) =>
+        set((state) => {
+          // Build a map of existing docs by id for O(1) lookup
+          const existingById = new Map(state.documents.map((d) => [d.id, d]));
+          // Upsert: server wins over local for the same id
+          serverDocs.forEach((doc) => existingById.set(doc.id, doc));
+          // Convert back to array; keep original order for local-only docs,
+          // prepend server docs so they appear at top of history
+          const serverIds = new Set(serverDocs.map((d) => d.id));
+          const localOnly = state.documents.filter((d) => !serverIds.has(d.id));
+          return { documents: [...serverDocs, ...localOnly] };
+        }),
         
       // 📁 Folder Actions
       getFolders: () => {

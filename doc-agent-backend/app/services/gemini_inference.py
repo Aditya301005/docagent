@@ -1,7 +1,7 @@
 """
 gemini_inference.py
 -----------------------
-Inference backend powered by Google Gemini (gemini-2.5-flash).
+Inference backend powered by Google Gemini (gemini-3.1-flash-lite).
 
 Replaces OpenRouter to process text and multimodal images.
 """
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Base Gemini URL pattern
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
 CLASS_NAMES = [
     "letter", "memo", "email", "filefolder", "form", "handwritten",
@@ -129,15 +129,17 @@ def _call_gemini_generic(
                 parsed_data = _parse_json_from_response(raw_content)
                 return {"data": parsed_data, "model": MODEL_NAME}
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429 and attempt < max_retries - 1:
-                    logger.warning(f"Rate limited (429). Retrying in {2 ** attempt} seconds...")
-                    time.sleep(5)
+                status_code = e.response.status_code
+                if (status_code == 429 or 500 <= status_code < 600) and attempt < max_retries - 1:
+                    sleep_time = (2 ** attempt) * 2
+                    logger.warning(f"Gemini API status {status_code}. Retrying in {sleep_time} seconds...")
+                    time.sleep(sleep_time)
                     continue
                 raise
         
     except Exception as exc:
         logger.warning("Gemini failed: %s", exc)
-        return {"error": str(exc), "model": MODEL_NAME}
+        raise exc
 
 def classify_document_gemini(
     ocr_text: str,
@@ -168,7 +170,7 @@ Return ONLY a JSON object:
     
     if "data" not in res or not isinstance(res["data"], dict) or "class" not in res["data"]:
         logger.error("Classification failed completely.")
-        return {"class": "unknown", "confidence": 0.0, "source": "gemini_error"}
+        raise ValueError("Invalid or empty classification response from Gemini")
 
     data = res["data"]
     doc_class = str(data.get("class", "unknown")).lower().replace(" ", "_")
@@ -217,7 +219,7 @@ Return ONLY a JSON array of objects:
     
     if "data" not in res or not isinstance(res["data"], list):
         logger.error("Entity extraction failed.")
-        return []
+        raise ValueError("Invalid or empty entity extraction response from Gemini")
         
     return res["data"]
 
@@ -304,11 +306,7 @@ Return ONLY a valid JSON object matching this exact schema (no markdown, no expl
     
     if "data" not in res or not isinstance(res["data"], dict):
         logger.error("Unified analysis failed completely.")
-        return {
-            "classification": {"class": "unknown", "confidence": 0.0, "source": "gemini_error"},
-            "entities": [],
-            "structured_data": {}
-        }
+        raise ValueError("Invalid or empty unified analysis response from Gemini")
 
     data = res["data"]
     best_model = res.get("model", "unknown")
@@ -401,7 +399,7 @@ Return ONLY a JSON object:
     
     if "data" not in res or not isinstance(res["data"], dict) or "answer" not in res["data"]:
         logger.error("QA failed.")
-        return {"answer": "I could not analyze the document successfully.", "confidence": 0.0, "source_quote": None, "source": "gemini_error"}
+        raise ValueError("Invalid or empty QA response from Gemini")
         
     data = res["data"]
     data["source"] = f"gemini ({res.get('model')})"

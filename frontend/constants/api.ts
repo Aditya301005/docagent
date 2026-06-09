@@ -3,21 +3,21 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 export const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.select({
-  android: 'http://192.168.29.171:8000',
-  ios: 'http://192.168.29.171:8000',
-  default: 'http://192.168.29.171:8000',
+  android: 'http://10.253.5.54:8000',
+  ios: 'http://10.253.5.54:8000',
+  default: 'http://10.253.5.54:8000',
 }) as string);
 
 export const DEFAULT_AUTH_URL = process.env.EXPO_PUBLIC_AUTH_URL || (Platform.select({
-  android: 'http://192.168.29.171:3000',
-  ios: 'http://192.168.29.171:3000',
-  default: 'http://192.168.29.171:3000',
+  android: 'http://10.253.5.54:3000',
+  ios: 'http://10.253.5.54:3000',
+  default: 'http://10.253.5.54:3000',
 }) as string);
 
 const API_URL_CANDIDATES = Array.from(
   new Set([
     DEFAULT_API_URL,
-    'http://192.168.29.171:8000',
+    'http://10.253.5.54:8000',
     'http://10.0.2.2:8000',
     'http://localhost:8000',
     'http://127.0.0.1:8000',

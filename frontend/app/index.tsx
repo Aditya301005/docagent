@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Spacing, Radius, Shadows } from '../constants/theme';
 import { useThemeStore } from '../store/useThemeStore';
 import { showCustomAlert } from '../components/CustomAlert';
+import { syncDocumentsFromServer } from '../utils/syncDocuments';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -284,6 +285,7 @@ export default function LoginScreenRoute() {
 
   const router = useRouter();
   const setCurrentUserKey = useDocStore((state) => state.setCurrentUserKey);
+  const hydrateFromServer = useDocStore((state) => state.hydrateFromServer);
   const [isChecking, setIsChecking] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -311,7 +313,15 @@ export default function LoginScreenRoute() {
           const user = response.data;
           if (user.email) await AsyncStorage.setItem('user_email', user.email);
           if (user.name) await AsyncStorage.setItem('user_name', user.name);
-          setCurrentUserKey(user.email || 'guest');
+          const ownerKey = user.email || 'guest';
+          setCurrentUserKey(ownerKey);
+          // ── Sync documents from server ─────────────────────────────────────
+          // Fetch this user's documents from the doc-agent backend and hydrate
+          // the Zustand store. This ensures history survives reinstalls / data
+          // clears because the server is the source of truth.
+          const serverDocs = await syncDocumentsFromServer(token, ownerKey);
+          if (serverDocs.length > 0) hydrateFromServer(serverDocs);
+          // ──────────────────────────────────────────────────────────────────
           router.replace('/(tabs)');
         } else {
           setCurrentUserKey('guest');
@@ -346,10 +356,18 @@ export default function LoginScreenRoute() {
         password,
       });
       if (response.data.access_token) {
-        await AsyncStorage.setItem('auth_token', response.data.access_token);
-        await AsyncStorage.setItem('user_email', response.data.email);
+        const token = response.data.access_token;
+        const ownerKey = response.data.email || email.trim().toLowerCase();
+        await AsyncStorage.setItem('auth_token', token);
+        await AsyncStorage.setItem('user_email', ownerKey);
         if (response.data.name) await AsyncStorage.setItem('user_name', response.data.name);
-        setCurrentUserKey(response.data.email || email.trim().toLowerCase());
+        setCurrentUserKey(ownerKey);
+        // ── Sync documents from server ───────────────────────────────────────
+        // Fetch this user's documents from the doc-agent backend immediately
+        // after login so the history screen is populated on first navigation.
+        const serverDocs = await syncDocumentsFromServer(token, ownerKey);
+        if (serverDocs.length > 0) hydrateFromServer(serverDocs);
+        // ────────────────────────────────────────────────────────────────────
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace('/(tabs)');
       }

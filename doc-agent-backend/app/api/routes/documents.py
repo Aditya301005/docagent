@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from typing import Optional
+import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.document import Document
+from app.models.result import ExtractionResult
 from app.schemas.document import DocumentResponse, DocumentStatusUpdate, DocumentLockUpdate
 from app.services.file_handler import save_upload, delete_file
 
@@ -65,17 +67,20 @@ async def list_documents(
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Document).where(Document.user_id == current_user.id)
-    
+
     if status is not None:
         query = query.where(Document.status == status)
     if doc_type is not None:
         query = query.where(Document.doc_type == doc_type)
-        
-    query = query.order_by(desc(Document.created_at))
-    
+
+    # Eager-load the extraction result so entities + classification are
+    # included in the list response — the frontend uses these to populate
+    # the history screen without a second per-document fetch.
+    query = query.options(selectinload(Document.result)).order_by(desc(Document.created_at))
+
     result = await db.execute(query)
     documents = result.scalars().all()
-    
+
     return documents
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
@@ -176,3 +181,84 @@ async def patch_document_lock(
     await db.refresh(doc)
 
     return doc
+
+
+@router.post("/sync", response_model=DocumentResponse)
+async def sync_processed_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form(None),
+    confidence: float = Form(0),
+    entities_json: str = Form("[]"),
+    classification_json: str = Form("{}"),
+    structured_data_json: str = Form("{}"),
+    ocr_text: str = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist a document that was processed client-side via the one-shot
+    /api/process endpoint. The mobile app sends the image file together
+    with the processing results so they can be fetched on re-login.
+    
+    This endpoint is idempotent — if a file with the same SHA256 hash
+    already exists for this user, the existing record is returned without
+    creating a duplicate.
+    """
+    # Save the uploaded file to disk (also computes SHA256 hash)
+    file_info = await save_upload(file, current_user.id)
+
+    # ── Duplicate Detection ─────────────────────────────────────────────
+    dup_query = select(Document).where(
+        Document.user_id == current_user.id,
+        Document.file_hash == file_info["file_hash"],
+    ).options(selectinload(Document.result))
+    dup_result = await db.execute(dup_query)
+    existing_doc = dup_result.scalar_one_or_none()
+
+    if existing_doc:
+        # Already synced — clean up the just-saved duplicate file
+        await delete_file(file_info["stored_path"])
+        return existing_doc
+    # ────────────────────────────────────────────────────────────────────
+
+    # Create the Document record
+    new_doc = Document(
+        user_id=current_user.id,
+        filename=file_info["filename"],
+        stored_path=file_info["stored_path"],
+        file_size_bytes=file_info["file_size_bytes"],
+        mime_type=file_info["mime_type"],
+        file_hash=file_info["file_hash"],
+        status="done",
+        doc_type=doc_type,
+        confidence=confidence,
+        ocr_text=ocr_text,
+    )
+    db.add(new_doc)
+    await db.flush()  # get new_doc.id
+
+    # Save the ExtractionResult
+    try:
+        entities = json.loads(entities_json) if entities_json else []
+        classification = json.loads(classification_json) if classification_json else {}
+        structured_data = json.loads(structured_data_json) if structured_data_json else {}
+    except json.JSONDecodeError:
+        entities, classification, structured_data = [], {}, {}
+
+    extraction = ExtractionResult(
+        document_id=new_doc.id,
+        entities=entities,
+        classification=classification,
+        structured_data=structured_data if structured_data else None,
+    )
+    db.add(extraction)
+
+    await db.commit()
+
+    # Re-fetch with the result relationship loaded
+    result = await db.execute(
+        select(Document)
+        .where(Document.id == new_doc.id)
+        .options(selectinload(Document.result))
+    )
+    return result.scalar_one()
+

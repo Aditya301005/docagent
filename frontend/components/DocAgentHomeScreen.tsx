@@ -370,6 +370,13 @@ export default function DocAgentHomeScreen({ userName }: { userName: string }) {
 
   const initials = displayName?.charAt(0)?.toUpperCase() || 'A';
 
+  const getGreeting = () => {
+    const hr = new Date().getHours();
+    if (hr < 12) return 'Good morning';
+    if (hr < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       <AmbientBg />
@@ -379,7 +386,7 @@ export default function DocAgentHomeScreen({ userName }: { userName: string }) {
         <View style={s.header}>
           <View style={s.headerText}>
             <Text style={s.welcomeLabel}>WORKSPACE</Text>
-            <Text style={s.userName} numberOfLines={1}>Good evening, {displayName}</Text>
+            <Text style={s.userName} numberOfLines={1}>{getGreeting()}, {displayName}</Text>
           </View>
           <View style={s.headerRight}>
             <TouchableOpacity

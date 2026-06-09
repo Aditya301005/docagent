@@ -29,12 +29,12 @@ ALL_FREE_MODELS = [
 ]
 
 EXTRACTION_MODELS = [
-    "google/gemini-2.5-flash-lite",
+    "google/gemini-3.1-flash-lite",
     "deepseek/deepseek-v4-flash:free",
 ]
 
 QA_MODELS = [
-    "google/gemini-2.5-flash-lite",
+    "google/gemini-3.1-flash-lite",
     "deepseek/deepseek-v4-flash:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
