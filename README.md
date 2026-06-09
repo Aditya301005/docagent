@@ -170,7 +170,6 @@ Here is how to test a full user flow from scratch:
 ## License / Acknowledgment
 - **License**: Distributed under the MIT License. See `LICENSE` for details.
 - **Acknowledgments**:
-  - Google Gemini API SDK & Google AI Studio
   - Expo and the React Native Community
   - Prisma Client & PostgreSQL
   - FastAPI & Celery
