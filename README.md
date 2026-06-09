@@ -163,10 +163,7 @@ Here is how to test a full user flow from scratch:
    - Swipe or click to lock the document. Setup a 6-digit PIN.
    - The file will be hidden from the standard history screen and moved to the encrypted **Secure Vault** tab, accessible only upon entering the PIN.
 
----
 
-## Team Members
-- **Aditya (Lead Engineer & Creator)** - [@Aditya301005](https://github.com/Aditya301005)
 
 ---
 
