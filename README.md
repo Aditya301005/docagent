@@ -7,71 +7,7 @@ The primary goal of DocAgent is to allow users to capture images of physical doc
 
 ---
 
-## Architecture Diagram
 
-Here is a visual overview of how the frontend, the FastAPI backend, the Express authentication service, and the external AI services are organized:
-
-```mermaid
-graph TD
-    %% Define Nodes
-    subgraph MobileApp ["Mobile Frontend (React Native / Expo)"]
-        ExpoRouter["Expo Router (Navigation)"]
-        Zustand["Zustand (Local State & Store)"]
-        SecureStore["SecureStore / AsyncStorage"]
-        Scanner["Camera Scanner / Document Picker"]
-    end
-
-    subgraph AuthBackend ["Node.js Authentication Backend"]
-        Express["Express API Server (Port 3000)"]
-        Prisma["Prisma ORM"]
-        SMTP["SMTP Mail Client"]
-    end
-
-    subgraph CoreBackend ["FastAPI AI Inference Backend"]
-        FastAPI["FastAPI API (Port 8000)"]
-        SQLAlchemy["SQLAlchemy ORM"]
-        Celery["Celery Worker (Background Inference)"]
-    end
-
-    subgraph DataCache ["Database & Caching Layer"]
-        Postgres[(PostgreSQL Database)]
-        Redis[(Redis Cache & Broker)]
-    end
-
-    subgraph ExternalServices ["External AI APIs"]
-        Gemini["Google Gemini API (3.1-flash-lite)"]
-        OpenRouter["OpenRouter (Alternative Fallback)"]
-    end
-
-    subgraph LocalModels ["Local ONNX Models (Offline Fallback)"]
-        Classifier["classifier.onnx"]
-        NER["ner_fixed.onnx"]
-        VQA["vqa.onnx"]
-    end
-
-    %% Connections
-    Scanner --> |Capture Image| Zustand
-    ExpoRouter --> |Auth / Reset Password| Express
-    Express --> |Read/Write User Data| Prisma
-    Prisma --> Postgres
-    Express --> |Send Verification Mail| SMTP
-    
-    Zustand --> |Bearer JWT Authentication| FastAPI
-    Zustand --> |Upload Image & Sync Results| FastAPI
-    
-    FastAPI --> |CRUD Operations| SQLAlchemy
-    SQLAlchemy --> Postgres
-    
-    FastAPI --> |Broker Task Enqueuing| Redis
-    Redis --> Celery
-    Celery --> |Database Updates| Postgres
-    
-    FastAPI --> |Multimodal LLM Request| Gemini
-    FastAPI --> |API Fallbacks| OpenRouter
-    FastAPI --> |Local CPU ONNX Inference| LocalModels
-```
-
----
 
 ## Features
 
@@ -97,7 +33,6 @@ graph TD
 - **Framework**: FastAPI with Uvicorn server, containerized with Docker & Docker Compose.
 - **Database Access**: SQLAlchemy (async session) & Alembic database migrations.
 - **Task Queue**: Celery task runner with Redis.
-- **AI Engine**: Google Gemini API integration (specifically leveraging `gemini-3.1-flash-lite`), OpenRouter fallbacks, and Tesseract OCR.
 - **Local Inference**: ONNX Runtime running local `.onnx` models.
 
 ### 3. Node.js Auth Backend
