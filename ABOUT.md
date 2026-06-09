@@ -31,7 +31,7 @@ DocAgent is built using a modern, decoupled microservices architecture, split in
 
 ### 2. AI Inference Backend (Python / FastAPI)
 - **Framework**: FastAPI (Python) running on Uvicorn, containerized using Docker and Docker Compose.
-- **AI Models**: Integrates directly with Google's **Gemini 2.5 Flash** API (via Google AI Studio) and OpenRouter for fallback/alternative LLM inference.
+
 - **Methodology**: The backend receives an image payload from the mobile app. It securely transmits the image to the Gemini vision model with a strict system prompt demanding a structured JSON response. The LLM performs visual OCR and entity extraction simultaneously, classifying the document and returning key-value pairs (e.g., totals, dates).
 - **Performance**: Optimized with HTTPX for asynchronous external API calls and strict timeouts to prevent hanging connections.
 
