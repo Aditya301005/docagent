@@ -1,4 +1,4 @@
-# About DocAgent AI
+# About DocAgent AI: Autonomous Document Processing Agent
 
 DocAgent AI is an advanced, AI-powered document scanning and intelligence application. It bridges the gap between physical documents and structured digital data by utilizing cutting-edge on-device mobile features combined with powerful cloud-based AI inference models.
 
